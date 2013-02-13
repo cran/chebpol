@@ -1,0 +1,106 @@
+
+R version 2.15.2 (2012-10-26) -- "Trick or Treat"
+Copyright (C) 2012 The R Foundation for Statistical Computing
+ISBN 3-900051-07-0
+Platform: x86_64-unknown-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> library(chebpol)
+Loading required package: compiler
+> 
+> cat("Has FFTW:",.Call(chebpol:::C_hasfftw),'\n')
+Has FFTW: TRUE 
+> set.seed(42)
+> 
+> a <- array(rnorm(24),c(2,3,4))
+> chebcoef(a)
+, , 1
+
+          [,1]       [,2]        [,3]
+[1,] 0.1163838 -0.1845058 -0.05441405
+[2,] 0.1003040 -0.1881047 -0.34460793
+
+, , 2
+
+          [,1]      [,2]       [,3]
+[1,] 0.6814540 0.1657732 -0.1698602
+[2,] 0.7366121 1.1906619  0.9207479
+
+, , 3
+
+           [,1]         [,2]       [,3]
+[1,] -0.1722693 -0.076893692  0.4553401
+[2,] -0.3912158 -0.007852942 -0.3644832
+
+, , 4
+
+            [,1]       [,2]       [,3]
+[1,] -0.71622274  0.6073009 -0.6756479
+[2,]  0.02286217 -0.8479831  1.1899382
+
+> 
+> f <- function(x) exp(-sum(x^2))
+> 
+> dims <- c(8,7,6)
+> ch <- chebappxf(f,dims)
+> s <- runif(3,-1,1)
+> ch(s)-f(s)
+[1] 0.0008013977
+> iv <- list(c(1,2),c(1,4),c(1,3))
+> ch <- chebappxf(f,dims,iv)
+> s <- c(1.4,2.3,1.9)
+> ch(s) - f(s)
+[1] -3.115592e-06
+> 
+> sum(evalongrid(f,dims))
+[1] 90.17567
+> 
+> chebknots(17)
+ [1]  9.957342e-01  9.618256e-01  8.951633e-01  7.980172e-01  6.736956e-01
+ [6]  5.264322e-01  3.612417e-01  1.837495e-01  6.123234e-17 -1.837495e-01
+[11] -3.612417e-01 -5.264322e-01 -6.736956e-01 -7.980172e-01 -8.951633e-01
+[16] -9.618256e-01 -9.957342e-01
+> 
+> # test chebappxg
+> ## evenly spaced grid-points
+> su <- seq(0,1,length.out=10)
+> ## irregularly spaced grid-points
+> s <- su^3
+> ## create approximation on the irregularly spaced grid
+> ch <- Vectorize(chebappxg(exp(s),list(s)))
+> ## test it:
+> r <- runif(1); cat('true:',exp(r),'appx:',ch(r),'\n')
+true: 1.414461 appx: 1.418291 
+> 
+> #multivariate chebappxg
+> su <- seq(0,1,length.out=11)
+> grid <- list(su,su^2,su^3)
+> dims <- lapply(grid,length)
+> fv <- structure(apply(expand.grid(grid),1,f),dim=lapply(grid,length))
+> ch <- chebappxg(fv,grid)
+> s <- runif(3)
+> cat('true:',f(s),'appx:',ch(s),'\n')
+true: 0.4602206 appx: 0.4597648 
+> ch <- chebappxg(fv,grid,mapdim=7)
+> cat('true:',f(s),'appx:',ch(s),'\n')
+true: 0.4602206 appx: 0.4602294 
+> ch <- chebappxg(fv,grid,mapdim=lapply(grid,length))
+> cat('true:',f(s),'appx:',ch(s),'\n')
+true: 0.4602206 appx: 0.459674 
+> 
+> 
+> 
+> proc.time()
+   user  system elapsed 
+  0.636   0.020   0.645 

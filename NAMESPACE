@@ -1,0 +1,4 @@
+useDynLib(chebpol,.registration=TRUE, .fixes='C_')
+
+export(chebappx,chebappxf,chebappxg,chebknots,evalongrid,chebcoef)
+importFrom(compiler,cmpfun)
