@@ -23,7 +23,7 @@ Loading required package: compiler
 Has FFTW: TRUE 
 > set.seed(42)
 > 
-> a <- array(rnorm(24),c(2,3,4))
+> a <- array(rnorm(24),c(x=2,y=3,z=4))
 > chebcoef(a)
 , , 1
 
@@ -65,13 +65,31 @@ Has FFTW: TRUE
 > 
 > sum(evalongrid(f,dims))
 [1] 90.17567
+> # vector valued function
+> g <- function(x) c(sum(x),prod(x),exp(-sum(x^2)))
+> gv <- evalongrid(g,dims)
+> sum(gv)
+[1] 90.17567
+> dim(gv)
+[1] 3 8 7 6
+> 
 > 
 > chebknots(17)
- [1]  9.957342e-01  9.618256e-01  8.951633e-01  7.980172e-01  6.736956e-01
- [6]  5.264322e-01  3.612417e-01  1.837495e-01  6.123234e-17 -1.837495e-01
-[11] -3.612417e-01 -5.264322e-01 -6.736956e-01 -7.980172e-01 -8.951633e-01
-[16] -9.618256e-01 -9.957342e-01
-> 
+[[1]]
+ [1]  0.9957342  0.9618256  0.8951633  0.7980172  0.6736956  0.5264322
+ [7]  0.3612417  0.1837495  0.0000000 -0.1837495 -0.3612417 -0.5264322
+[13] -0.6736956 -0.7980172 -0.8951633 -0.9618256 -0.9957342
+
+> chebknots(c(x=3,y=4,z=5))
+$x
+[1]  0.8660254  0.0000000 -0.8660254
+
+$y
+[1]  0.9238795  0.3826834 -0.3826834 -0.9238795
+
+$z
+[1]  0.9510565  0.5877853  0.0000000 -0.5877853 -0.9510565
+
 > # test chebappxg
 > ## evenly spaced grid-points
 > su <- seq(0,1,length.out=10)
@@ -87,6 +105,7 @@ true: 1.414461 appx: 1.418291
 > su <- seq(0,1,length.out=11)
 > grid <- list(su,su^2,su^3)
 > dims <- lapply(grid,length)
+> 
 > fv <- structure(apply(expand.grid(grid),1,f),dim=lapply(grid,length))
 > ch <- chebappxg(fv,grid)
 > s <- runif(3)
@@ -99,8 +118,13 @@ true: 0.4602206 appx: 0.4602294
 > cat('true:',f(s),'appx:',ch(s),'\n')
 true: 0.4602206 appx: 0.459674 
 > 
+> # multi linear
+> s <- runif(3)
+> lip <- mlappx(fv,grid)
+> cat('true',f(s), 'appx:', ch(s), 'lip:',lip(s),'\n')
+true 0.3503825 appx: 0.3506861 lip: 0.349812 
 > 
 > 
 > proc.time()
    user  system elapsed 
-  0.636   0.020   0.645 
+  0.452   0.052   0.487 

@@ -3,7 +3,7 @@
 \title{Create the Chebyshev-coefficients given values on a Chebyshev grid}
 \concept{Chebyshev polynomial}
 \description{
-  Create the multivariate Chebyshev-coefficients given values on a Chebyshev grid.
+  Create the multivariate Chebyshev-coefficients, given values on a Chebyshev grid.
 }
 
 \usage{

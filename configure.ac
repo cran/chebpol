@@ -10,9 +10,11 @@ AC_CONFIG_AUX_DIR(src/build/autoconf)
 
 AC_ARG_ENABLE([fftw],
        [AS_HELP_STRING([--disable-fftw],[do not use fftw])],
-       [use_fftw=$enableval],[use_fftw=yes])
+       [use_fftw=no],[use_fftw=yes])
 
-
+AC_ARG_ENABLE([check],
+	[AS_HELP_STRING([--enable-check],[enable pedantic syntax check])],
+	[EXTRA='-Wall --pedantic -Werror'])
 # some R 
 if test -n "${R_HOME}"; then
   CC=`${R_HOME}/bin/R CMD config CC`
@@ -27,12 +29,12 @@ AS_IF([test "x$use_fftw" = "xyes"], [
   PKG_CHECK_MODULES([FFTW], fftw3,[FFTW=-DHAVE_FFTW],[echo '*** FFTW not found. Compiling with matrix method'])
 ])
 ## --- Output ----------------------------------------------------------------
+AC_SUBST(EXTRA)
 AC_SUBST(FFTW)
 AC_SUBST(FFTW_CFLAGS)
 AC_SUBST(FFTW_LIBS)
 
 AC_SUBST(CPPFLAGS)
-AC_SUBST(CXXFLAGS)
 AC_SUBST(LIBS)
 
 AC_OUTPUT(src/Makevars)

@@ -4,7 +4,7 @@
 \concept{Chebyshev polynomial}
 \description{
   Given function values on a Chebyshev grid, create an approximating function defined
-  in the whole interior of the grid
+  in the whole hypercube.
 }
 \usage{
 chebappx(val,intervals=NULL)
@@ -14,10 +14,10 @@ chebappx(val,intervals=NULL)
 \item{val}{The function values on the grid. \code{val} should be an
   array with appropriate dimension attribute}
 \item{intervals}{A list of minimum and maximum values. One for each
-  dimension of the grid}
+  dimension of the hypercube}
 }
 \value{
-A function defined on the interior of the grid. A Chebyshev
+A function defined on the hypercube. A Chebyshev
 approximation to the function values provided in \code{val}
 }
 
@@ -32,7 +32,7 @@ approximation to the function values provided in \code{val}
   intervals into [-1,1] intervals.
 
   The approximation function will yield a warning and return \code{NaN}
-  if evaluated outside the domain hypercube.  Even though the
+  if evaluated outside the hypercube.  Even though the
   Chebyshev-interpolation is really a polynomial, internally it is
   evaluated using arccos. Also, the interpolation is not useful outside
   the domain of definition since the polynomial may be highly erratic
@@ -43,19 +43,22 @@ approximation to the function values provided in \code{val}
 f <- function(x) exp(-sum(x^2))
 ## we want 3 dimensions, i.e. something like
 ## f(x,y,z) = exp(-(x^2 + y^2 + z^2))
+## 8 points in each dimension
 gridsize <- list(8,8,8)
-## make a Chebyshev grid by using the function chebknots in each dimension
-grid <- expand.grid(mapply(chebknots,gridsize,SIMPLIFY=FALSE))
-# get the function values on the grid, and set the dim attribute
-values <- structure(apply(grid,1,f),dim=gridsize)
+# get the function values on the Chebyshev grid
+values <- evalongrid(f,gridsize)
+# make an approximation
 ch <- chebappx(values)
 ## test it:
 a <- runif(3,-1,1);ch(a)-f(a)
 
-## then one with different domain
+## then one with domain [0.1,0.3] x [-1,-0.5] x [0.5,2]
 intervals <- list(c(0.1,0.3),c(-1,-0.5),c(0.5,2))
-grid <- expand.grid(mapply(chebknots,gridsize,intervals,SIMPLIFY=FALSE))
-values <- structure(apply(grid,1,f),dim=gridsize)
+# evaluate on the grid
+values <- evalongrid(f,gridsize,intervals)
+# make an approximation
 ch2 <- chebappx(values,intervals)
 a <- c(0.25,-0.68,1.43); ch2(a)-f(a)
+# outside of domain yields NaN:
+ch2(runif(3))
 }

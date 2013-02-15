@@ -583,8 +583,8 @@ PACKAGE_URL=
 
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
-CXXFLAGS
 FFTW
+EXTRA
 FFTW_LIBS
 FFTW_CFLAGS
 PKG_CONFIG
@@ -637,6 +637,7 @@ ac_subst_files=''
 ac_user_opts='
 enable_option_checking
 enable_fftw
+enable_check
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1257,6 +1258,7 @@ Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --disable-fftw          do not use fftw
+  --enable-check          enable pedantic syntax check
 
 Some influential environment variables:
   CC          C compiler command
@@ -1771,12 +1773,16 @@ ac_configure="$SHELL $ac_aux_dir/configure"  # Please don't use this var.
 
 # Check whether --enable-fftw was given.
 if test "${enable_fftw+set}" = set; then :
-  enableval=$enable_fftw; use_fftw=$enableval
+  enableval=$enable_fftw; use_fftw=no
 else
   use_fftw=yes
 fi
 
 
+# Check whether --enable-check was given.
+if test "${enable_check+set}" = set; then :
+  enableval=$enable_check; EXTRA='-Wall --pedantic -Werror'
+fi
 
 # some R
 if test -n "${R_HOME}"; then

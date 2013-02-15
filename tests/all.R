@@ -3,7 +3,7 @@ library(chebpol)
 cat("Has FFTW:",.Call(chebpol:::C_hasfftw),'\n')
 set.seed(42)
 
-a <- array(rnorm(24),c(2,3,4))
+a <- array(rnorm(24),c(x=2,y=3,z=4))
 chebcoef(a)
 
 f <- function(x) exp(-sum(x^2))
@@ -18,9 +18,15 @@ s <- c(1.4,2.3,1.9)
 ch(s) - f(s)
 
 sum(evalongrid(f,dims))
+# vector valued function
+g <- function(x) c(sum(x),prod(x),exp(-sum(x^2)))
+gv <- evalongrid(g,dims)
+sum(gv)
+dim(gv)
+
 
 chebknots(17)
-
+chebknots(c(x=3,y=4,z=5))
 # test chebappxg
 ## evenly spaced grid-points
 su <- seq(0,1,length.out=10)
@@ -35,6 +41,7 @@ r <- runif(1); cat('true:',exp(r),'appx:',ch(r),'\n')
 su <- seq(0,1,length.out=11)
 grid <- list(su,su^2,su^3)
 dims <- lapply(grid,length)
+
 fv <- structure(apply(expand.grid(grid),1,f),dim=lapply(grid,length))
 ch <- chebappxg(fv,grid)
 s <- runif(3)
@@ -44,4 +51,8 @@ cat('true:',f(s),'appx:',ch(s),'\n')
 ch <- chebappxg(fv,grid,mapdim=lapply(grid,length))
 cat('true:',f(s),'appx:',ch(s),'\n')
 
+# multi linear
+s <- runif(3)
+lip <- mlappx(fv,grid)
+cat('true',f(s), 'appx:', ch(s), 'lip:',lip(s),'\n')
 

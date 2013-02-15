@@ -18,7 +18,7 @@ chebappxf(fun, dims, intervals=NULL,...)
 \item{...}{Further arguments to \code{fun}}
 }
 \value{
-A function defined on the interior of the grid. A Chebyshev
+A function defined on the hypercube. A Chebyshev
 approximation to the function \code{fun}.
 }
 

@@ -1,55 +1,71 @@
+.onAttach <- function(libname,pkgname) {
+  if(!.Call(C_hasfftw)) {
+    packageStartupMessage("*** ",pkgname,": FFTW not used.\n*** You should install it from http://fftw.org and recompile ",pkgname)
+  }
+}
+
+
 # Chebyshev transformation.  I.e. coefficients for given function values in the knots.
 
 # The Chebyshev knots of order n on an interval
-chebknots <- function(n,interval=NULL) {
+chebknots1 <- function(n, interval=NULL) {
   kn <- cos(pi*((1:n)-0.5)/n)
+  kn[abs(kn) < 1e-15] <- 0
   if(is.null(interval)) return(kn)
   kn*diff(interval)/2 + sum(interval)/2
 }
 
-# evaluate a function on a Chebyshev grid
-evalongrid <- function(fun,dims,intervals=NULL,...) {
+chebknots <- function(n, intervals=NULL) {
   if(is.null(intervals)) {
-    knots <- lapply(dims,chebknots)
+    res <- lapply(n,chebknots1)
   } else {
-    if(length(dims) == 1 && is.numeric(intervals)) intervals=list(intervals)
+    if(length(n) == 1 && is.numeric(intervals)) intervals=list(intervals)
     if(!is.list(intervals)) stop("intervals should be a list")
-    knots <- mapply(chebknots,dims,intervals,SIMPLIFY=FALSE)
+    res <- mapply(chebknots1,n,intervals,SIMPLIFY=FALSE)
   }
-  structure(apply(expand.grid(knots),1,fun,...), dim=dims)
+
+  res
+}
+
+# evaluate a function on a Chebyshev grid
+evalongrid <- function(fun,dims,intervals=NULL,...,grid=NULL) {
+# do a call to stuff which doesn't really expand the grid
+  if(is.null(grid)) grid <- chebknots(dims,intervals)
+  mf <- match.fun(fun)
+  .Call(C_evalongrid,function(x) mf(x,...), grid)
+#  structure(apply(expand.grid(chebknots(dims,intervals)),1,fun,...), dim=dims)
 }
 
 
 # Chebyshev coefficients for x, which may be an array
 chebcoef <- function(x) {
-  .Call(C_chebcoef,x)
+  structure(.Call(C_chebcoef,as.array(x)),dimnames=dimnames(x))
+  
 }
 
 # return a function which is a Chebyshev interpolation
 chebappx <- function(val,intervals=NULL) {
   if(is.null(dim(val))) {
+    # allow for one-dimensional
     dim(val) <- length(val)
-    # allow for vector, e.g. intervals=c(0,1), put it inside list
   }
+   # allow for vector, e.g. intervals=c(0,1), put it inside list
   if(is.numeric(intervals) && length(intervals) == 2) intervals <- list(intervals)
 
   cf <- chebcoef(val)
-  dims <- dim(val)
 
   if(is.null(intervals)) {
     # it's [-1,1] intervals, so drop transformation
-    cfun <- cmpfun(function(x,d) cos((0:(d-1))*acos(x)))
-    imap <- cmpfun(function(x) mapply(cfun,x,dims,SIMPLIFY=FALSE))
-    intervals <- replicate(length(dims),c(-1,1),simplify=FALSE)
+    fun <- structure(function(x) .Call(C_evalcheb,cf,x),arity=length(dim(val)))
   } else {
     # it's intervals, create mapping into [-1,1]
     if(!is.list(intervals)) stop("intervals should be a list")
-    ispan <- lapply(intervals,function(x) 2/diff(x))
-    mid <- lapply(intervals,function(x) sum(x)/2)
-    cfun <- cmpfun(function(x,d,is,m) cos((0:(d-1))*acos((x-m)*is)))
-    imap <- cmpfun(function(x) mapply(cfun,x,dims,ispan,mid,SIMPLIFY=FALSE))
+    ispan <- sapply(intervals,function(x) 2/diff(x))
+    mid <- sapply(intervals,function(x) sum(x)/2)
+    imap <- cmpfun(function(x) (x-mid)*ispan)
+    fun <- structure(function(x) .Call(C_evalcheb,cf,imap(x)),arity=length(dim(val)),domain=intervals)
   }
-  structure(function(x) .Call(C_evalcheb,cf,imap(x)),arity=length(dims),domain=intervals)
+  fun
 }
 
 # interpolate a function
@@ -73,11 +89,6 @@ chebappxf <- function(fun,dims,intervals=NULL,...) {
 # specified in mapdim.  It defaults to 10 in each dimension.
 # if mapdim is NULL, the inversion will be done on each call to the interpolation function
 
-.onAttach <- function(libname,pkgname) {
-  if(!.Call(C_hasfftw)) {
-    packageStartupMessage("*** ",pkgname,": FFTW not used.\n*** You should install it from http://fftw.org and recompile ",pkgname)
-  }
-}
 
 chebappxg <- function(val,grid=NULL,mapdim=NULL) {
   # grid is a list of grid points. val is the values as in expand.grid(grid)
@@ -129,4 +140,15 @@ chebappxg <- function(val,grid=NULL,mapdim=NULL) {
   gridmap <- cmpfun(function(x) mapply(function(gm,x) cutfunc(gm(x)),gridmaps,x))
   ch <- chebappx(val)
   structure(function(x) ch(gridmap(x)),arity=length(grid),domain=intervals,grid=grid)
+}
+
+chebappxgf <- function(fun, grid, ..., mapdim=NULL) {
+  chebappxg(evalongrid(fun, ..., grid=grid),grid,mapdim)
+}
+
+mlappx <- function(val,grid) {
+  gl <- prod(sapply(grid,length))
+  if(length(val) != gl)
+    stop("length of values ",length(val)," do not match size of grid ",gl)
+  function(x) .Call(C_evalmlip,grid,as.numeric(val),as.numeric(x))
 }
