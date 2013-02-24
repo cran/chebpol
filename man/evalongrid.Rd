@@ -12,14 +12,14 @@ evalongrid(fun,dims,intervals=NULL,...,grid=NULL)
 
 \arguments{
 \item{fun}{Multivariate real-valued function to be evaluated. Must be defined on the
-hypercube described by \code{intervals}}
-\item{dims}{A vector of integers. The number of grid-points in each dimension}
+hypercube described by \code{intervals}.}
+\item{dims}{A vector of integers. The number of grid-points in each dimension.}
 \item{intervals}{A list. Each entry is a vector of length 2 with
-  the lower and upper end of the interval in each dimension}
-\item{...}{Further arguments to fun}
+  the lower and upper end of the interval in each dimension.}
+\item{...}{Further arguments to fun.}
 \item{grid}{Rather than specifying dims and intervals to get a Chebyshev
   grid, you may specify your own \code{grid} as a list of vectors whose Cartesian
-  product will be the grid, as in \code{expand.grid(grid)}}
+  product will be the grid, as in \code{expand.grid(grid)}.}
 }
 
 \value{
@@ -44,7 +44,7 @@ returns a vector, this will be the first dimension of the returned array.
   dimension. 
 
   The grid itself may be produced by
-  \code{expand.grid(chebknots,dims,intervals)}, or
+  \code{expand.grid(\link{chebknots}(dims,intervals))}, or
   \code{expand.grid(grid)}. 
 
   This function does the same as \code{apply(expand.grid(grid),1,fun)}, but it's

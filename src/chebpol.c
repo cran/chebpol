@@ -8,8 +8,8 @@
 #include <fftw3.h>
 #endif
 
-static void chebcoef(double *x, int *dims, int *dimlen, double *F) {
-  size_t siz = 1;
+static void chebcoef(double *x, int *dims, int *dimlen, double *F, int dct) {
+  int siz = 1;
   int rank = *dimlen;
   for(int i = 0; i < rank; i++) siz *= dims[i];
 
@@ -31,7 +31,7 @@ static void chebcoef(double *x, int *dims, int *dimlen, double *F) {
   fftw_destroy_plan(plan);
 
   // adjust scale to fit our setup
-  for(int i = 0; i < siz; i++) F[i] *= isiz;
+  if(!dct) for(int i = 0; i < siz; i++) F[i] *= isiz;
 #else
   double *src, *dest, *buf;
   double **mat;
@@ -68,7 +68,7 @@ static void chebcoef(double *x, int *dims, int *dimlen, double *F) {
   // We will switch src and dest between F and buf
   // We should end up with dest=F, so if 
   // rank is odd we should start with src = F, dest=buf
-  if(rank & 1 == 1) {
+  if((rank & 1) == 1) {
     src = F;
     dest = buf;
   } else {
@@ -80,7 +80,7 @@ static void chebcoef(double *x, int *dims, int *dimlen, double *F) {
     // transformation of dimension i, put in front
     int N = dims[i];  // length of transform
     int stride = siz/N;
-    double alpha = 2.0/N;  // Constant for transform
+    double alpha = dct ? 2.0 : 2.0/N;  // Constant for transform
     // swap src and dest
     double *p = src;
     src = dest;
@@ -91,32 +91,36 @@ static void chebcoef(double *x, int *dims, int *dimlen, double *F) {
     //    for(int k = 0; k < siz; k+= N) dest[k] *= 0.5;
   }
 #endif
-
-  // We need to adjust the first element in each dimension by 0.5
-  // The DCT-II isn't exactly equal to the Chebyshev transform
-  int blocklen = 1;  // length of block
-  int stride = 1; // distance between blocks
-  for(int i = 0; i < rank; i++) {
-    stride *= dims[i];
-    for(int j = 0; j < siz; j += stride) {
-      for(int s = 0; s < blocklen; s++) {
-	F[j+s] *= 0.5;
+  if(!dct) {
+    // We need to adjust the first element in each dimension by 0.5
+    // The DCT-II isn't exactly equal to the Chebyshev transform
+    int blocklen = 1;  // length of block
+    int stride = 1; // distance between blocks
+    for(int i = 0; i < rank; i++) {
+      stride *= dims[i];
+      for(int j = 0; j < siz; j += stride) {
+	for(int s = 0; s < blocklen; s++) {
+	  F[j+s] *= 0.5;
+	}
       }
+      blocklen = stride;
     }
-    blocklen *= dims[i];
   }
 }
 
 
 
-static SEXP R_chebcoef(SEXP x) {
+static SEXP R_chebcoef(SEXP x, SEXP sdct) {
 
   SEXP dim;
   int rank;
   int *dims;
-  size_t siz;
+  int siz;
   SEXP resvec;
   int sdims;
+  int dct;
+  if(!isLogical(sdct) || LENGTH(sdct) < 1) error("dct must be a logical");
+  dct = LOGICAL(sdct)[0];
   dim = getAttrib(x,R_DimSymbol);
   // If no dim-attribute, assume one-dimensional
   if(isNull(dim)) {
@@ -126,13 +130,15 @@ static SEXP R_chebcoef(SEXP x) {
 
   } else {
     rank = LENGTH(dim);
+    if(rank <= 0) error("Rank must be positive");
     dims = INTEGER(dim);
   }
   siz = 1;
   for(int i = 0; i < rank; i++) siz *= dims[i];
+  if(siz == 0) error("array size must be positive");
 
   PROTECT(resvec = NEW_NUMERIC(siz));
-  chebcoef(REAL(x),dims,&rank,REAL(resvec));
+  chebcoef(REAL(x),dims,&rank,REAL(resvec),dct);
   setAttrib(resvec,R_DimSymbol,dim);
   setAttrib(resvec,R_DimNamesSymbol,getAttrib(x,R_DimNamesSymbol));
   UNPROTECT(1);
@@ -152,7 +158,7 @@ static SEXP R_chebcoef(SEXP x) {
 static double evalcheb(double *cf, double *xvec[], int *dims, int rank) {
   double res = 0.0;
   double *xl;
-  size_t siz = 1;
+  int siz = 1;
   int newrank = rank-1;
   int N = dims[newrank];
 
@@ -171,38 +177,62 @@ static double evalcheb(double *cf, double *xvec[], int *dims, int rank) {
 }
 
 static double C_evalcheb(double *cf, double *x, int *dims, int rank) {
-  double **xvec = Calloc(rank,double*);
+  double *xvec[rank];
   double res;
+
+  if(rank == 1) {
+    double x0 = x[0];
+    // special case for rank=1. Clenshaw.
+    // Could we generalize this so as not to allocate extra memory for rank > 1 too?
+    double bn1=0, bn2 = 0, bn=0;
+    for(int i = dims[0]-1; i >= 0; i--) {
+      bn2 = bn1; bn1 = bn;
+      bn = 2*x0*bn1 - bn2 + cf[i];
+    }
+    return bn - x0*bn1;
+  }
+
+  // make cos(j*acos(x)) for each dimension. 
+  // Use recurrence relation (cos(nx) = 2cos(x)cos((n-1)x) - cos((n-2)x))
+  // I.e. the Chebyshev identity
+
   for(int i = 0; i < rank; i++) {
-    double acx = acos(x[i]);
     double *xv = Calloc(dims[i],double);
     xvec[i] = xv;
-    for(int j = 0; j < dims[i]; j++) xv[j] = cos(j*acx);
+    xv[0] = 1.0;
+    if(dims[i] == 1) break;
+    xv[1] = x[i];
+    for(int j = 2; j < dims[i]; j++) xv[j] = 2*x[i]*xv[j-1] - xv[j-2];
   }
 
   res = evalcheb(cf,xvec,dims,rank);
   for(int i = 0; i < rank; i++) Free(xvec[i]);
-  Free(xvec);
   return res;
 }
 
 static SEXP R_evalcheb(SEXP coef, SEXP inx) {
   int *dims;
-  size_t siz = 1;
+  int siz = 1;
   double *cf = REAL(coef);
   SEXP resvec;
   SEXP dim;
   int rank;
   double *x = REAL(inx);
-
   // Create some pointers and stuff. 
   dim = getAttrib(coef,R_DimSymbol);
   dims = INTEGER(dim);
   rank = LENGTH(dim);
+  if(rank <= 0) error("rank must be positive");
+  if(rank != LENGTH(inx))
+    error("coefficient rank(%d) does not match argument length(%d)",
+	  LENGTH(dim),LENGTH(inx));
 
+  if(LENGTH(inx) != LENGTH(dim)) error("Length of vector(%d) does not match rank of grid(%d)",
+				       LENGTH(inx),LENGTH(dim));
   for(int i = 0; i < rank; i++)  siz *= dims[i];
-
-  if(LENGTH(coef) != siz) error("coef length(%d) must match data length(%d)",LENGTH(coef),siz);
+  if(LENGTH(coef) != siz)
+    error("coefficient length(%d) does not match data length(%d)",
+	  LENGTH(coef),siz);
 
   PROTECT(resvec = NEW_NUMERIC(1));
   REAL(resvec)[0] = C_evalcheb(cf, x, dims,rank);
@@ -211,35 +241,36 @@ static SEXP R_evalcheb(SEXP coef, SEXP inx) {
 }
 
 // an R-free evalongrid. Recursive
-void evalongrid(void (*fun)(double *x, double *y, int arity, void *ud),
+void C_evalongrid(void (*fun)(double *x, double *y, int valuedim, void *ud),
 		double *arg, double **grid,
-		int *dims, int rank, int arity, double *result, void *userdata) {
+		int *dims, int rank, int valuedim, double *result, void *userdata) {
   int mrank = rank-1;
-  int stride = 1;
+  int stride = valuedim;
 
   if(mrank == 0) {
     /* we could have terminated on rank==0 with a single result[0] = fun(arg),
        but we stop earlier to save some function calls */
-    for(int i = 0; i < dims[0]; i++) {
+    for(int i = 0, j=0; i < dims[0]; i++, j+=valuedim) {
       arg[0] = grid[0][i];
-      fun(arg,&result[i*arity],arity,userdata);
+      fun(arg,&result[j],valuedim,userdata);
       //      result[i] = fun(arg);
     }
     return;
   }
   for(int i = 0; i < mrank; i++) stride *= dims[i];
-  stride *= arity;
+
   for(int i = 0,j = 0; i < dims[mrank]; i++, j += stride) {
     arg[mrank] = grid[mrank][i];
-    evalongrid(fun, arg, grid, dims, mrank, arity, &result[j], userdata);
+    C_evalongrid(fun, arg, grid, dims, mrank, valuedim, &result[j], userdata);
   }
 }
 
-void C_call(double *x, double *y, int arity, void *userdata) {
+void C_call(double *x, double *y, int valuedim, void *userdata) {
     // don't need x, because the arg-pointer which is used is set in the
     // R_fcall structure
+
   double *fv = REAL(eval( *(SEXP*)userdata,R_NilValue));
-  for(int i = 0; i < arity; i++) y[i] = fv[i];
+  for(int i = 0; i < valuedim; i++) y[i] = fv[i];
 }
 
 
@@ -252,7 +283,7 @@ static SEXP R_evalongrid(SEXP fun, SEXP sgrid) {
   SEXP R_fcall;
   SEXP R_arg;
   SEXP R_dim;
-  int arity;
+  int valuedim;
 
   if(!isFunction(fun)) error("'fun' must be a function");
   PROTECT(R_dim = NEW_INTEGER(rank));
@@ -273,22 +304,22 @@ static SEXP R_evalongrid(SEXP fun, SEXP sgrid) {
   for(int i = 0; i < rank; i++) REAL(R_arg)[i] = grid[i][0];
   SEXP fv = eval(R_fcall,R_NilValue);
   if(!IS_NUMERIC(fv)) error("fun must return a real value");
-  arity = LENGTH(fv);
+  valuedim = LENGTH(fv);
   
   // Now, it's just to fill in arg, and 
   // do REAL(eval(R_fcall,NULL))[0] 
-  PROTECT(resvec = NEW_NUMERIC(len*arity));
-  evalongrid(C_call,REAL(R_arg),grid,dims,rank,arity,REAL(resvec), (void*) &R_fcall);
+  PROTECT(resvec = NEW_NUMERIC(len*valuedim));
+  C_evalongrid(C_call,REAL(R_arg),grid,dims,rank,valuedim,REAL(resvec), (void*) &R_fcall);
 
   // Set the dim-attribute
-  if(arity == 1) {
+  if(valuedim == 1) {
     setAttrib(resvec,R_DimSymbol,R_dim);
   } else {
     SEXP snewdim;
     int *newdim;
     PROTECT(snewdim = NEW_INTEGER(rank+1));
     newdim = INTEGER(snewdim);
-    newdim[0] = arity;
+    newdim[0] = valuedim;
     for(int i = 1; i < rank+1; i++)
       newdim[i] = dims[i-1];
     setAttrib(resvec,R_DimSymbol,snewdim);
@@ -399,7 +430,7 @@ static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x) {
 }
 
 
-static SEXP R_hasfftw() {
+static SEXP R_havefftw() {
   SEXP res;
   PROTECT(res = NEW_LOGICAL(1));
 #ifdef HAVE_FFTW
@@ -413,10 +444,10 @@ static SEXP R_hasfftw() {
 
 R_CallMethodDef callMethods[] = {
   {"evalcheb", (DL_FUNC) &R_evalcheb, 2},
-  {"chebcoef", (DL_FUNC) &R_chebcoef, 1},
+  {"chebcoef", (DL_FUNC) &R_chebcoef, 2},
   {"evalmlip", (DL_FUNC) &R_evalmlip, 3},
   {"evalongrid", (DL_FUNC) &R_evalongrid, 2},
-  {"hasfftw", (DL_FUNC) &R_hasfftw, 0},
+  {"havefftw", (DL_FUNC) &R_havefftw, 0},
   {NULL, NULL, 0}
 };
 
@@ -424,8 +455,10 @@ R_CallMethodDef callMethods[] = {
 void attribute_visible R_init_chebpol(DllInfo *info) {
   /* register our routines */
   R_registerRoutines(info,NULL,callMethods,NULL,NULL);
-  R_RegisterCCallable("chebpol", "evalcheb", (DL_FUNC) &C_evalcheb);
-  R_RegisterCCallable("chebpol", "evalmlip", (DL_FUNC) &C_evalmlip);
+  R_useDynamicSymbols(info, FALSE);
+  R_RegisterCCallable("chebpol", "evalcheb", (DL_FUNC) C_evalcheb);
+  R_RegisterCCallable("chebpol", "evalmlip", (DL_FUNC) C_evalmlip);
+  R_RegisterCCallable("chebpol", "evalongrid", (DL_FUNC) C_evalongrid);
 
 }
 #ifdef HAVE_FFTW

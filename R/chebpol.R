@@ -1,6 +1,6 @@
 .onAttach <- function(libname,pkgname) {
-  if(!.Call(C_hasfftw)) {
-    packageStartupMessage("*** ",pkgname,": FFTW not used.\n*** You should install it from http://fftw.org and recompile ",pkgname)
+  if(!havefftw()) {
+    packageStartupMessage("*** ",pkgname,": FFTW not used.\n*** You should install it from http://fftw.org\n*** or check if your OS-distribution provides it, and recompile.",pkgname)
   }
 }
 
@@ -10,18 +10,18 @@
 # The Chebyshev knots of order n on an interval
 chebknots1 <- function(n, interval=NULL) {
   kn <- cos(pi*((1:n)-0.5)/n)
-  kn[abs(kn) < 1e-15] <- 0
+  if((n %% 2) == 1) kn[[(n+1)/2]] = 0
   if(is.null(interval)) return(kn)
-  kn*diff(interval)/2 + sum(interval)/2
+  kn*diff(interval)/2 + mean(interval)
 }
 
-chebknots <- function(n, intervals=NULL) {
+chebknots <- function(dims, intervals=NULL) {
   if(is.null(intervals)) {
-    res <- lapply(n,chebknots1)
+    res <- lapply(dims,chebknots1)
   } else {
-    if(length(n) == 1 && is.numeric(intervals)) intervals=list(intervals)
+    if(length(dims) == 1 && is.numeric(intervals)) intervals=list(intervals)
     if(!is.list(intervals)) stop("intervals should be a list")
-    res <- mapply(chebknots1,n,intervals,SIMPLIFY=FALSE)
+    res <- mapply(chebknots1,dims,intervals,SIMPLIFY=FALSE)
   }
 
   res
@@ -38,9 +38,14 @@ evalongrid <- function(fun,dims,intervals=NULL,...,grid=NULL) {
 
 
 # Chebyshev coefficients for x, which may be an array
-chebcoef <- function(x) {
-  structure(.Call(C_chebcoef,as.array(x)),dimnames=dimnames(x))
-  
+chebcoef <- function(val, dct=FALSE) {
+  structure(.Call(C_chebcoef,as.array(val),dct),dimnames=dimnames(val))
+}
+
+chebeval <- function(x,coef,intervals=NULL) {
+  if(is.null(intervals)) return(.Call(C_evalcheb,coef,x))
+  # map into intervals
+  .Call(C_evalcheb,mapply(function(x,i) 2*(x[[1]]-mean(i))/diff(i),x,intervals))
 }
 
 # return a function which is a Chebyshev interpolation
@@ -60,8 +65,11 @@ chebappx <- function(val,intervals=NULL) {
   } else {
     # it's intervals, create mapping into [-1,1]
     if(!is.list(intervals)) stop("intervals should be a list")
+    if(any(sapply(intervals,length) != 2)) stop("interval elements should have length 2")
+    if(length(intervals) != length(dim(val))) stop("values should have the same dimension as intervals",
+               length(intervals),length(dim(val)))
     ispan <- sapply(intervals,function(x) 2/diff(x))
-    mid <- sapply(intervals,function(x) sum(x)/2)
+    mid <- sapply(intervals,function(x) mean(x))
     imap <- cmpfun(function(x) (x-mid)*ispan)
     fun <- structure(function(x) .Call(C_evalcheb,cf,imap(x)),arity=length(dim(val)),domain=intervals)
   }
@@ -95,8 +103,11 @@ chebappxg <- function(val,grid=NULL,mapdim=NULL) {
   # if grid is null it is assumed to be a chebyshev grid. The dimensions
   # must be present in val
   if(is.null(grid)) return(chebappx(val))
+  if(is.null(dim(val))) dim(val) <- length(val)
+  if(!is.list(grid) && length(grid) == length(val)) grid <- list(grid)
   if(prod(sapply(grid,length)) != length(val)) stop('grid size must match data length')
   dim(val) <- sapply(grid,length)
+
   # ok, grid is something like list(c(...),c(...),c(...))
   # create piecewise linear functions which maps grid-points to chebyshev grids
 
@@ -143,7 +154,24 @@ chebappxg <- function(val,grid=NULL,mapdim=NULL) {
 }
 
 chebappxgf <- function(fun, grid, ..., mapdim=NULL) {
+
+  if(!is.list(grid)) grid <- list(grid)
   chebappxg(evalongrid(fun, ..., grid=grid),grid,mapdim)
+}
+
+ucappx <- function(val, intervals=NULL) {
+  if(is.null(dim(val))) dim(val) <- length(val)
+  grid <- lapply(dim(val),function(n) seq(-1,1,length.out=n))
+  if(is.null(intervals)) return(chebappxg(val,grid))
+  chebappxg(val,mapply(function(g,i) 0.5*g*diff(i) + mean(i),grid,intervals,SIMPLIFY=FALSE))
+}
+
+ucappxf <- function(fun, dims, intervals=NULL,...) {
+  if(is.numeric(dims)) dims <- list(dims)
+  grid <- lapply(dims,function(n) seq(-1,1,length.out=n))
+  if(is.null(intervals)) return(chebappxgf(fun,grid))
+  if(is.numeric(intervals) && length(intervals) == 2) intervals <- list(intervals)
+  chebappxgf(fun,mapply(function(g,i) 0.5*g*diff(i) + mean(i),grid,intervals,SIMPLIFY=FALSE))
 }
 
 mlappx <- function(val,grid) {
@@ -152,3 +180,6 @@ mlappx <- function(val,grid) {
     stop("length of values ",length(val)," do not match size of grid ",gl)
   function(x) .Call(C_evalmlip,grid,as.numeric(val),as.numeric(x))
 }
+
+havefftw <- function() .Call(C_havefftw)
+

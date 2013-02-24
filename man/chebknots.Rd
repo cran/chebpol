@@ -3,27 +3,29 @@
 \title{Create a Chebyshev-grid}
 \concept{Chebyshev polynomial}
 \description{
-  Create a one-dimensional Chebyshev grid on an interval.
+  Create a Chebyshev grid on a hypercube.
 }
 
 \usage{
-  chebknots(n,intervals=NULL)
+  chebknots(dims,intervals=NULL)
 }
 
 \arguments{
-\item{n}{The number of grid-points. For a Chebyshev-polynomial of degree \code{n-1}}
-\item{intervals}{A vector of length 2. The lower and upper bound of the interval}
+\item{dims}{The number of grid-points in each dimension.  For Chebyshev-polynomial of degree \code{dims-1}.}
+\item{intervals}{A list of vectors of length 2.  The lower and upper bounds of the hypercube.}
 }
 
 
 \value{
-A vector of length \code{n}. The Chebyshev grid-points.
+A array of dimension \code{dims}.  The Chebyshev grid-points.
 }
 
 \details{
-  If \code{interval} is not provided, it is assumed that the
-  domain of the function is [-1,1].  Thus, standard Chebyshev
+  If \code{intervals} is not provided, it is assumed that the
+  domain of the function in each dimension is [-1,1].  Thus, standard Chebyshev
   knots are produced.
+  If \code{dims} is of length 1, \code{intervals} may be a vector of
+  length 2 rather than a list with a vector of length 2.
 }
 
 \examples{
@@ -35,6 +37,6 @@ chebknots(4,interval=c(2,3))
 chebknots(c(3,4,3))
 ## Multivariate grid
 \dontrun{
-expand.grid(g)
+expand.grid(chebknots(3,4,3))
 }
 }

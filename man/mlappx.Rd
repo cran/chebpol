@@ -11,14 +11,14 @@
 }
 
 \arguments{
-\item{val}{Function values on a grid}
-\item{grid}{A list. Each element is a vector of grid-points for a
-  dimension. These need not be Chebyshev-knots, nor evenly spaced}
+\item{val}{Function values on a grid.}
+\item{grid}{A list.  Each element is a vector of grid-points for a
+  dimension.  These need not be Chebyshev-knots, nor evenly spaced.}
 }
 
 
 \value{
-A \code{fun <- function(x)} defined on the hypercube, approximating the given
+A \code{function(x)} defined on the hypercube, approximating the given
 function.  The function yields values for arguments outside the
 hypercube as well, as a linear extension.
 }

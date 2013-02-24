@@ -19,8 +19,8 @@ Type 'q()' to quit R.
 > library(chebpol)
 Loading required package: compiler
 > 
-> cat("Has FFTW:",.Call(chebpol:::C_hasfftw),'\n')
-Has FFTW: TRUE 
+> cat("Have FFTW:",havefftw(),'\n')
+Have FFTW: TRUE 
 > set.seed(42)
 > 
 > a <- array(rnorm(24),c(x=2,y=3,z=4))
@@ -50,6 +50,13 @@ Has FFTW: TRUE
 [2,]  0.02286217 -0.8479831  1.1899382
 
 > 
+> if(havefftw()) {
++ # A long one-dimensional
++ f <- function(x) ifelse(x==0,0,sin(1/x))
++ ch <- chebappxf(f,dims=50000)
++ cat('Long test:',ch(0.03),f(0.03),ch(0.031),f(0.031),'\n')
++ }
+Long test: 0.9400964 0.9405296 0.7465345 0.7460684 
 > f <- function(x) exp(-sum(x^2))
 > 
 > dims <- c(8,7,6)
@@ -62,6 +69,8 @@ Has FFTW: TRUE
 > s <- c(1.4,2.3,1.9)
 > ch(s) - f(s)
 [1] -3.115592e-06
+> a <- c(1.01,1.01,1.01) ; ch(a)- f(a)
+[1] 0.0001730159
 > 
 > sum(evalongrid(f,dims))
 [1] 90.17567
@@ -124,7 +133,63 @@ true: 0.4602206 appx: 0.459674
 > cat('true',f(s), 'appx:', ch(s), 'lip:',lip(s),'\n')
 true 0.3503825 appx: 0.3506861 lip: 0.349812 
 > 
+> # test dct transform
+> a <- array(rnorm(24),c(2,3,4))
+> chebcoef(a,TRUE)
+, , 1
+
+           [,1]      [,2]      [,3]
+[1,] -26.939001 -12.66278  18.24154
+[2,]  -8.272854   5.52333 -22.87475
+
+, , 2
+
+          [,1]      [,2]       [,3]
+[1,] -20.39115 -11.25950 -13.274138
+[2,] -13.14882 -16.08393  -4.362152
+
+, , 3
+
+          [,1]     [,2]       [,3]
+[1,]  66.94581 10.32754 -35.067934
+[2,] -15.66932 25.56388   5.373858
+
+, , 4
+
+          [,1]      [,2]      [,3]
+[1,] 21.410472  21.72729 -5.768413
+[2,] -3.574685 -15.15039  7.594488
+
+> 
+> # uniform grid stuff
+> # Runge function
+> f <- function(x) 1/(1+25*x^2)
+> grid <- seq(-1,1,length.out=15)
+> val <- f(grid)
+> uc <- Vectorize(ucappx(val))
+> # and the Chebyshev
+> ch <- Vectorize(chebappxf(f,15))
+> # test it at 10 random points
+> t(replicate(10,{a<-runif(1,-1,1); c(arg=a, uc=uc(a), true=f(a), cheb=ch(a))}))
+              arg         uc       true       cheb
+ [1,]  0.47971056 0.13901097 0.14808112 0.18206153
+ [2,]  0.46649181 0.14764805 0.15527070 0.18623047
+ [3,]  0.07152258 0.89588202 0.88661365 0.91498866
+ [4,] -0.99545407 0.03980017 0.03879996 0.03605659
+ [5,]  0.21787491 0.44350331 0.45730239 0.44957467
+ [6,]  0.67360312 0.08757743 0.08101411 0.05334764
+ [7,]  0.50304513 0.12680685 0.13649343 0.17139813
+ [8,] -0.09453685 0.82722472 0.81737382 0.85626468
+ [9,]  0.07157999 0.89572631 0.88645224 0.91485814
+[10,]  0.07475339 0.88698231 0.87742255 0.90751056
+> 
+> uc <- Vectorize(ucappxf(f,15,intervals=c(-1,1)))
+> a <- runif(1,-1,1)
+> uc(a); ch(a); f(a)
+[1] 0.03927424
+[1] 0.03002706
+[1] 0.03866661
 > 
 > proc.time()
    user  system elapsed 
-  0.452   0.052   0.487 
+  1.464   0.060   1.513 

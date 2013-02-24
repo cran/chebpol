@@ -2,12 +2,13 @@
 \alias{chebpol-package}
 \alias{chebpol}
 \docType{package}
-\title{Methods for creating multivariate Chebyshev interpolations}
+\title{Methods for creating multivariate Chebyshev interpolations on hypercubes}
 \concept{Multivariate Chebyshev approximation}
 \concept{Discrete Cosine Transform}
 \description{
   The package contains methods for creating multivariate Chebyshev
-  interpolations for real-valued functions.
+  interpolations for real-valued functions on hypercubes.  Some methods for
+  non-Chebyshev grids are also provided.
 }
 
 \details{
@@ -20,7 +21,7 @@
   Thus, one needs the function values on a set of
   prespecified points.
   
-  The multivariate case is similar, the grid is the cartesian product of
+  The multivariate case is similar, the grid is the Cartesian product of
   one-dimensional grids.  I.e. all combinations of all grid-points.
 
   The Chebyshev coefficients for the interpolating polynomial in the
@@ -36,23 +37,29 @@
 
   The Chebyshev-approximation is defined on the interval [-1,1], but it
   is straightforward to map any interval into [-1,1], thus making
-  Chebyshev approximation on an interval of choice. Or, a hypercube of choice.
+  Chebyshev approximation on an interval of choice.  Or, a hypercube of choice.
 
-  The primary method of the package is \code{chebappx} which takes as
+  The primary method of the package is \code{\link{chebappx}} which takes as
   input the function values on the grid, possibly together with a
-  hypercube specification in the form of a list of intervals. It
+  hypercube specification in the form of a list of intervals.  It
   produces a function which interpolates on the hypercube.
 
-  There is also a wrapper called \code{chebappxf} which may be used if
-  one has the function to be approximated.
+  There is also a wrapper called \code{\link{chebappxf}} which may be used if
+  one has the function to be approximated rather than only its values in
+  the grid-points.
 
-  There is even a poor-man's interpolation for non-Chebyshev grids in \code{chebappxg}.
-  And a multi linear interpolation in \code{mlappx}.
+  There is even an interpolation for uniform grids in
+  \code{\link{ucappx}}, with a wrapper in \code{\link{ucappxf}}
+  with an interesting example.  And a more general for arbitrary
+  Cartesian-product grids in \code{\link{chebappxg}} with a wrapper in
+  \code{\link{chebappxgf}}.
+  
+  A multilinear interpolation is available in \code{\link{mlappx}}.
   
   There are also functions for producing Chebyshev
-  grids (\code{chebknots}) as well as a support function for evaluating a
-  function on a grid (\code{evalongrid}), and a function for
-  finding the Chebyshev coefficients (\code{chebcoef}).
+  grids (\code{\link{chebknots}}) as well as a support function for evaluating a
+  function on a grid (\code{\link{evalongrid}}), and a function for
+  finding the Chebyshev coefficients (\code{\link{chebcoef}}).
 }
 
 \examples{
