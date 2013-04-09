@@ -7,7 +7,7 @@
 }
 
 \usage{
-  chebknots(dims,intervals=NULL)
+  chebknots(dims, intervals=NULL)
 }
 
 \arguments{
@@ -34,9 +34,9 @@ chebknots(4)
 ## Knots in the interval [2,3] for degree 3
 chebknots(4,interval=c(2,3))
 ## Multivariate knots
-chebknots(c(3,4,3))
+chebknots(c(x=3,y=4,z=3))
 ## Multivariate grid
 \dontrun{
-expand.grid(chebknots(3,4,3))
+expand.grid(chebknots(c(x=3,y=4,z=5), list(c(1,3), c(4,6), c(800,900))))
 }
 }

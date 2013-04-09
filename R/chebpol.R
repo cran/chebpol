@@ -1,6 +1,6 @@
 .onAttach <- function(libname,pkgname) {
   if(!havefftw()) {
-    packageStartupMessage("*** ",pkgname,": FFTW not used.\n*** You should install it from http://fftw.org\n*** or check if your OS-distribution provides it, and recompile.",pkgname)
+    packageStartupMessage("*** ",pkgname,": FFTW not used.\n*** You should install it from http://fftw.org\n*** or check if your OS-distribution provides it, and recompile.")
   }
 }
 
@@ -30,6 +30,7 @@ chebknots <- function(dims, intervals=NULL) {
 # evaluate a function on a Chebyshev grid
 evalongrid <- function(fun,dims,intervals=NULL,...,grid=NULL) {
 # do a call to stuff which doesn't really expand the grid
+  if(is.numeric(grid)) grid <- list(grid)
   if(is.null(grid)) grid <- chebknots(dims,intervals)
   mf <- match.fun(fun)
   .Call(C_evalongrid,function(x) mf(x,...), grid)
@@ -90,12 +91,10 @@ chebappxf <- function(fun,dims,intervals=NULL,...) {
 
 # if grid is unspecified, it is assumed that it is on a Chebyshev grid in [-1,1]
 # If grid is specified, it is a list of vectors. The length of the list
-# is the dimension of the grid. Each vector contains grid-points in increasing order.
+# is the dimension of the grid. Each vector contains grid-points in increasing or decreasing order.
 # val is assumed to be the function values on expand.grid(grid)
-# The user-grid is mapped to [-1,1] by approximating the inverse of a one-dimensional Chebyshev
-# transform in each dimension. The number of knots in this inverse approximation is
-# specified in mapdim.  It defaults to 10 in each dimension.
-# if mapdim is NULL, the inversion will be done on each call to the interpolation function
+# The user-grid is mapped to Chebshev knots in [-1,1] by splinefun in pkg stats
+
 
 
 chebappxg <- function(val,grid=NULL,mapdim=NULL) {
@@ -111,44 +110,12 @@ chebappxg <- function(val,grid=NULL,mapdim=NULL) {
   # ok, grid is something like list(c(...),c(...),c(...))
   # create piecewise linear functions which maps grid-points to chebyshev grids
 
+
   intervals <- lapply(grid,function(x) c(min(x),max(x)))
-
-  if(is.null(mapdim)) {
-    gridmaps <- mapply(
-                  function(gm) {
-                    gm  # force promise to be evaluated
-                    function(x) {
-                      uniroot(function(y) gm(y)-x, lower=-1,upper=1)$root
-                    }
-                  },
-                  mapply(chebappx,grid)
-                )
-  } else {
-    mapdim <- as.integer(mapdim)
-    if(any(mapdim < 1)) stop('mapdim should be >= 1')
-    if(length(mapdim) == 1 && length(grid) != 1) {
-      mapdim <- rep(mapdim,length(grid))
-    } else if(length(mapdim) != length(grid)) {
-      stop('length of mapdim ',length(mapdim),' must be the same as length of grid ',length(grid))
-    }
-    gridmaps <- mapply(
-                  chebappxf,
-                  mapply(function(gm) {
-                    gm  # force promise to be evaluated
-                    function(x) uniroot(function(y) gm(y)-x, lower=-1,upper=1)$root
-                  },
-                         mapply(chebappx,grid)),
-                  dims=mapdim,
-                  intervals=intervals)
-  }
-  # now, val is the values on the grid-points 
-  # create an ordinary Chebyshev interpolation, but make sure to map
-  # user coordinates to [-1,1]
-  # Note that gridmap may happen to map outside [-1,1] for small mapdim (perhaps for large?)
-  # we simply cut it.
-
-  cutfunc <- function(x) pmin(pmax(x,-1),1)
-  gridmap <- cmpfun(function(x) mapply(function(gm,x) cutfunc(gm(x)),gridmaps,x))
+  # create monotone splines with splinefun, method monoH.FC
+  gridmaps <- mapply(splinefun, grid, chebknots(dim(val)), MoreArgs=list(method='monoH.FC'))
+#  gridmaps <- mapply(polyh, chebknots(dim(val)), grid, MoreArgs=list(k=1))
+  gridmap <- cmpfun(function(x) mapply(function(gm,x) gm(x),gridmaps,x))
   ch <- chebappx(val)
   structure(function(x) ch(gridmap(x)),arity=length(grid),domain=intervals,grid=grid)
 }
@@ -159,22 +126,42 @@ chebappxgf <- function(fun, grid, ..., mapdim=NULL) {
   chebappxg(evalongrid(fun, ..., grid=grid),grid,mapdim)
 }
 
+# we can actually find the grid-maps for uniform grids.
+# the Chebyshev knots are cos(pi*(j+0.5)/n) for j=0..n-1 These should
+# map into the n grid points. These have distance 2/(n-1), starting in -1, ending in 1
+# so they are -1 + 2*j/(n-1). After some manipulation, the function is:
+
+ugm <- function(x,n) sin(0.5*pi*x*(1-n)/n)
+
 ucappx <- function(val, intervals=NULL) {
   if(is.null(dim(val))) dim(val) <- length(val)
-  grid <- lapply(dim(val),function(n) seq(-1,1,length.out=n))
-  if(is.null(intervals)) return(chebappxg(val,grid))
-  chebappxg(val,mapply(function(g,i) 0.5*g*diff(i) + mean(i),grid,intervals,SIMPLIFY=FALSE))
+  dims <- dim(val)
+  ch <- chebappx(val)
+  if(is.null(intervals)) {
+    gridmap <- function(x) mapply(function(xi,d) ugm(xi,d),x,dims)
+  } else {
+    # precompute interval mid points and inverse lengths
+    md <- lapply(intervals,mean)
+    ispan <- lapply(intervals, function(i) 2/diff(i))
+    gridmap <- function(x) mapply(function(xi,mid,is,d) ugm(is*(xi-mid),d),x,md,ispan,dims)
+  }
+  return(structure(function(x) ch(gridmap(x)), arity=length(dims)))
 }
 
 ucappxf <- function(fun, dims, intervals=NULL,...) {
-  if(is.numeric(dims)) dims <- list(dims)
-  grid <- lapply(dims,function(n) seq(-1,1,length.out=n))
-  if(is.null(intervals)) return(chebappxgf(fun,grid))
+  if(is.null(intervals))
+    return(ucappx(evalongrid(fun,...,grid=lapply(dims,function(d) seq(-1,1,length.out=d)))))
   if(is.numeric(intervals) && length(intervals) == 2) intervals <- list(intervals)
-  chebappxgf(fun,mapply(function(g,i) 0.5*g*diff(i) + mean(i),grid,intervals,SIMPLIFY=FALSE))
+  return(
+    ucappx(evalongrid(fun,...,
+                      grid=mapply(function(d,i) seq(min(i),max(i),length.out=d),
+                        dims, intervals,SIMPLIFY=FALSE)),
+           intervals))
 }
 
-mlappx <- function(val,grid) {
+mlappx <- function(val, grid, ...) {
+  if(is.numeric(grid)) grid <- list(grid)
+  if(is.function(val)) val <- evalongrid(val,grid=grid,...)
   gl <- prod(sapply(grid,length))
   if(length(val) != gl)
     stop("length of values ",length(val)," do not match size of grid ",gl)
@@ -182,4 +169,58 @@ mlappx <- function(val,grid) {
 }
 
 havefftw <- function() .Call(C_havefftw)
+
+
+polyh <- function(val, knots, k=2, ...) {
+# Linear polyharmonic splines. Centres are columns in matrix knots. Function values in val.
+# Quite slow for ncol(knots) > 3000 or so.  k=2 yields thin-plate splines.
+# There exist faster evaluation methods for dimensions <= 4
+# k < 0 yields Gaussian kernel splines, with sigma^2 = -1/k
+# we compute r^2, so powers etc. are adjusted for that case
+# Hmm, I should take a look at http://dx.doi.org/10.1016/j.jat.2012.11.008 for the unit ball
+# perhaps some normalization should be added?
+  if(is.null(dim(knots))) dim(knots) <- c(1,length(knots))
+  if(is.function(val)) val <- apply(knots,2,val,...)
+  N <- ncol(knots)
+  M <- nrow(knots)
+  ki <- k/2
+  if(k < 0)
+    phi <- local(cmpfun(function(r2) exp(k*r2)),list(k=k))
+  else if(k %% 2 == 1) {
+    phi <- local(cmpfun(function(r2) r2^ki), list(ki=ki))
+  } else {
+    ki <- as.integer(ki)-1L # trick to handle r2=0. Works because 0^0 = 1 in R
+    phi <- local(cmpfun(function(r2) 0.5*r2^ki * log(r2^r2)),list(ki=ki))
+  }
+
+  sqnm <- apply(knots,2,function(x) sum(x^2))
+  # would it be faster to apply phi only on lower tri?  Without crossprod?
+  # and either fill in the upper tri, or tailor a solver? I think
+  # evaluation of phi on the matrix is fast compared to creating the matrix,
+  # though I haven't measured it. Could've done it in C, probably somewhat faster.
+  # use abs when we call phi. The argument can't be negative, but numerically it can
+  A <- phi(abs(-2*crossprod(knots) + sqnm + rep(sqnm,each=N)))
+  A[diag(A)] <- 1
+  V <- rbind(1,knots)
+  mat <- cbind(rbind(A,V),rbind(t(V),matrix(0,M+1,M+1)))
+  rhs <- c(val,rep(0,M+1))
+  wv <- try(solve(mat,rhs))
+  if(inherits(wv,'try-error')) {
+    warning('Failed to fit exactly, fallback to least squares fit')
+    wv <- lm.fit(mat,rhs)$coefficients
+    wv[is.na(wv)] <- 0
+  }
+  w <- wv[1:N]
+  v <- wv[(N+1):length(wv)]
+  local(cmpfun(function(x) {
+    if(is.vector(x) && length(x) == M) {
+      sum(w*phi(abs(-2*crossprod(x,knots) + sqnm + sum(x^2)))) + sum(v*c(1,x))
+    } else {
+      if(is.null(dim(x))) dim(x) <- c(M,length(x)/M)
+      if(nrow(x) != M) stop('spline was built for dimension ',M,' not ',nrow(x))
+      apply(x,2,function(xx) sum(w*phi(abs(-2*crossprod(xx,knots) + sqnm + sum(xx^2)))) + sum(v*c(1,xx)))
+    }
+  }), list(w=w,v=v,knots=knots,phi=phi,sqnm=sqnm,M=M))
+}
+
 

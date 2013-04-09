@@ -7,7 +7,7 @@
 }
 
 \usage{
-evalongrid(fun,dims,intervals=NULL,...,grid=NULL)
+evalongrid(fun, dims, intervals=NULL, ..., grid=NULL)
 }
 
 \arguments{

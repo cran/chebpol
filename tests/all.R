@@ -53,10 +53,6 @@ fv <- structure(apply(expand.grid(grid),1,f),dim=lapply(grid,length))
 ch <- chebappxg(fv,grid)
 s <- runif(3)
 cat('true:',f(s),'appx:',ch(s),'\n')
-ch <- chebappxg(fv,grid,mapdim=7)
-cat('true:',f(s),'appx:',ch(s),'\n')
-ch <- chebappxg(fv,grid,mapdim=lapply(grid,length))
-cat('true:',f(s),'appx:',ch(s),'\n')
 
 # multi linear
 s <- runif(3)

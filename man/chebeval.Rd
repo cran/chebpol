@@ -5,7 +5,7 @@
   Given Chebyshev coefficients, evaluate the interpolation in a point.
 }
 \usage{
-chebeval(x,coef,intervals=NULL)
+chebeval(x, coef, intervals=NULL)
 }
 
 \arguments{

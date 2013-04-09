@@ -1,7 +1,7 @@
 \name{chebappxg}
 \alias{chebappxg}
-\title{Create interpolation from function values on a non-Chebyshev grid}
-\concept{Chebyshev polynomial}
+\alias{chebappxgf}
+\title{Interpolation on a non-Chebyshev grid}
 \description{
   A poor-man's approximation on non-Chebyshev grids.
   If you for some reason can't evaluate your function on a
@@ -11,15 +11,17 @@
 }
 
 \usage{
-chebappxg(val,grid=NULL,mapdim=NULL)
+chebappxg(val, grid=NULL, mapdim=NULL)
+chebappxgf(fun, grid, ..., mapdim=NULL) 
 }
 
 \arguments{
-\item{val}{Function values on a grid.}
+\item{val}{Array. Function values on a grid.}
 \item{grid}{A list. Each element is a sorted vector of grid-points for a
   dimension. These need not be Chebyshev-knots, nor evenly spaced.}
-\item{mapdim}{Degree of Chebyshev-polynomial mapping grid into Chebyshev
-  intervals [-1,1].}
+\item{fun}{The function to be approximated.}
+\item{...}{Further arguments to \code{fun}.}
+\item{mapdim}{Deprecated.}
 }
 
 
@@ -33,27 +35,20 @@ function.
   A call \code{fun <- chebappxg(val,grid)} does the following.  A
   Chebyshev interpolation \code{ch} for \code{val} is created, on the
   [-1,1] hypercube.  For each dimension a grid-map function \code{gm} is
-  created which maps Chebyshev knots into the given grid-points. When
-  \code{fun(x)} is called, the equation \code{gm(y)=x} is solved for
-  \code{y}, yielding a number in [-1,1], which is used as argument:
-  \code{ch(y)}.
+  created which maps the grid-points monotonically into Chebyshev
+  knots. For this, the function \code{\link{splinefun}} with
+  \code{method='monoH.FC'} is used.
+  When \code{fun(x)} is called, it translates to \code{ch(gm(x))}.
+  For uniform grids, the function \code{\link{ucappx}}
+  will produce a faster interpolation in that a closed form \code{gm} is used.
+
+  \code{chebappxgf} is used if the function, rather than its values, is
+  available. The function will be evaluated on the grid.
 
   Even though this approach works in simple cases it is not a panacea.
   The grid in each dimension should probably not be too irregularly
   spaced. I.e. short and long gaps interspersed is likely to cause
-  problems in that the \code{gm}-function mentioned above will not be
-  monotonous.
-
-  If \code{mapdim} is an integer, the system \code{gm(y)=x} is solved
-  and approximated with a Chebyshev-polynomial of dimension
-  \code{mapdim}, yielding an inverse \code{y = igm(x)}. When
-  \code{fun(x)} is called, it translates to \code{ch(igm(x))}, thus
-  avoiding solving \code{gm(y) = x} in each call to \code{fun(x)}.
-  \code{mapdim} may also be a vector with a Chebyshev-length for
-  \code{igm} for each dimension.
-
-  The interpolation function may not be possible to evaluate outside the
-  domain, and in some cases not even in the domain close to the borders. 
+  problems.
 }
 
 \examples{
@@ -71,4 +66,23 @@ grid <- list(s,su,su^2)
 ch2 <- chebappxg(evalongrid(f,grid=grid),grid)
 # test it at 10 random points
 replicate(10,{a<-runif(3); ch2(a)-f(a)})
+
+# Try Runge's function on a uniformly spaced grid.
+# Ordinary polynomial fitting of high degree of Runge's function on a uniform grid
+# creates large oscillations near the end of the interval. Not so with chebappxgf
+f <- function(x) 1/(1+25*x^2)
+chg <- Vectorize(chebappxgf(f,seq(-1,1,length.out=15)))
+# also compare with Chebyshev interpolation
+ch <- Vectorize(chebappxf(f,15))
+\dontrun{
+ # plot it
+ s <- seq(-1,1,length.out=200)
+ plot(s, f(s), type='l', col='black')
+ lines(s, chg(s), col='blue')
+ lines(s, ch(s), col='red')
+ legend('topright',
+        legend=c('Runge function','chebappxg on uniform grid','Chebyshev'),
+        col=c('black','blue','red'), lty=1)
+}
+
 }
