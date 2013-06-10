@@ -1,11 +1,12 @@
-5cde721237f189713df3cd5b13d530dc *DESCRIPTION
+9d58dbddc3f0bedcb921848e69922868 *DESCRIPTION
 71ccbf7a1b12872cfc1b3cb11422ac38 *NAMESPACE
-342aac29f17590cc029cedd4f01e4c89 *R/chebpol.R
+4e4bd7fb199beaaae9f64583726d0d84 *R/chebpol.R
 f9bca0725862cc5a650ad1fb756e3824 *aclocal.m4
 96617f339ce9f7bc78c87e734bc65f9d *configure
 855ef3b9069a9fbeef5fcfba70446981 *configure.ac
+5d11ea0aa6ab516dd39af0d957b9abab *inst/doc/chebpol.R
 8238c7b6d4bee53d5fa76e496f310012 *inst/doc/chebpol.Rnw
-5d2c30067262e0104da2ee575a6171e5 *inst/doc/chebpol.pdf
+bb9ee4deeef505b89ac3c1119d3f8da7 *inst/doc/chebpol.pdf
 31e3ca9e07bf56297217985071e63564 *man/chebappx.Rd
 6793d7963d1e9721d9939991d7f7c813 *man/chebappxg.Rd
 8363b44d9170127a1be55b0082409ac5 *man/chebcoef.Rd
@@ -23,7 +24,7 @@ b1440e8c0b77f5c8baf12dff47d6aea5 *src/Makevars.win
 559bc9e2fca45761389ce2f3140cec0c *src/build/autoconf/config.guess
 0b96c40308f509ba2c0e132c1d2e70e7 *src/build/autoconf/config.sub
 9d5ae975ae461be51dfd41d904c52af2 *src/build/autoconf/install-sh
-99f89687f7b5d1c77f26ac0670711456 *src/chebpol.c
-27a830b9a7448ea7979636c17ad7c37e *tests/all.R
-a4eb8362ec2bea423c248555138e05d2 *tests/all.Rout.save
+2586a8415ab859bd19d6d4341ff24094 *src/chebpol.c
+c15f8bbfd6b6c2c27d6a67e40a392961 *tests/all.R
+8944383566de7a9288e12451f0f2f9da *tests/all.Rout.save
 8238c7b6d4bee53d5fa76e496f310012 *vignettes/chebpol.Rnw

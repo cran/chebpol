@@ -46,7 +46,7 @@ chebcoef <- function(val, dct=FALSE) {
 chebeval <- function(x,coef,intervals=NULL) {
   if(is.null(intervals)) return(.Call(C_evalcheb,coef,x))
   # map into intervals
-  .Call(C_evalcheb,mapply(function(x,i) 2*(x[[1]]-mean(i))/diff(i),x,intervals))
+  .Call(C_evalcheb,coef,mapply(function(x,i) 2*(x[[1]]-mean(i))/diff(i),x,intervals))
 }
 
 # return a function which is a Chebyshev interpolation

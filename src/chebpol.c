@@ -10,7 +10,7 @@
 
 static void chebcoef(double *x, int *dims, int *dimlen, double *F, int dct) {
   int siz = 1;
-  int rank = *dimlen;
+  const int rank = *dimlen;
   for(int i = 0; i < rank; i++) siz *= dims[i];
 
 #ifdef HAVE_FFTW
@@ -155,12 +155,12 @@ static SEXP R_chebcoef(SEXP x, SEXP sdct) {
   x has been interval transformed into [-1,1]
 */
 
-static double evalcheb(double *cf, double *xvec[], int *dims, int rank) {
+static double evalcheb(double *cf, double *xvec[], int *dims, const int rank) {
   double res = 0.0;
   double *xl;
   int siz = 1;
-  int newrank = rank-1;
-  int N = dims[newrank];
+  const int newrank = rank-1;
+  const int N = dims[newrank];
 
   if(newrank == 0) {
     for(int i = 0; i < N; i++) res += cf[i]*xvec[0][i];
@@ -176,7 +176,7 @@ static double evalcheb(double *cf, double *xvec[], int *dims, int rank) {
   return res;
 }
 
-static double C_evalcheb(double *cf, double *x, int *dims, int rank) {
+static double C_evalcheb(double *cf, double *x, int *dims, const int rank) {
   double *xvec[rank];
   double res;
 
@@ -243,7 +243,7 @@ static SEXP R_evalcheb(SEXP coef, SEXP inx) {
 // an R-free evalongrid. Recursive
 void C_evalongrid(void (*fun)(double *x, double *y, int valuedim, void *ud),
 		double *arg, double **grid,
-		int *dims, int rank, int valuedim, double *result, void *userdata) {
+		const int *dims, const int rank, const int valuedim, double *result, void *userdata) {
   int mrank = rank-1;
   int stride = valuedim;
 
@@ -265,7 +265,7 @@ void C_evalongrid(void (*fun)(double *x, double *y, int valuedim, void *ud),
   }
 }
 
-void C_call(double *x, double *y, int valuedim, void *userdata) {
+void C_call(double *x, double *y, const int valuedim, void *userdata) {
     // don't need x, because the arg-pointer which is used is set in the
     // R_fcall structure
 
@@ -336,7 +336,7 @@ static SEXP R_evalongrid(SEXP fun, SEXP sgrid) {
 // we never return 0, if val < arr[0] we return 1
 // if val > arr[n-1], we return n-1
 // this is suited for our particular application
-static inline int binsearch(int n,double *arr, double val) {
+static inline int binsearch(const int n,double *arr, const double val) {
   int toosmall, toolarge, test;
   toosmall = 0;
   toolarge = n-1;
@@ -351,7 +351,7 @@ static inline int binsearch(int n,double *arr, double val) {
   return toolarge;
 }
 
-static double C_evalmlip(int rank, double *x, double **grid, int *dims, double *values) {
+static double C_evalmlip(const int rank, double *x, double **grid, int *dims, double *values) {
 
   double weight[rank];
   int valpos = 0;

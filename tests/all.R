@@ -77,3 +77,15 @@ t(replicate(10,{a<-runif(1,-1,1); c(arg=a, uc=uc(a), true=f(a), cheb=ch(a))}))
 uc <- Vectorize(ucappxf(f,15,intervals=c(-1,1)))
 a <- runif(1,-1,1)
 uc(a); ch(a); f(a)
+
+#polyharmonic splines
+f <- function(x) 10/(10+sum(sqrt(x)))
+knots <- matrix(runif(6000), 6)
+phs <- polyh(f, knots, 3)
+# test it in a random point
+a <- runif(6)
+f(a); phs(a)
+phs <- polyh(f,knots,6)
+phs(a)
+phs <- polyh(f,knots,-20)
+phs(a)

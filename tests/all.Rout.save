@@ -1,7 +1,6 @@
 
-R version 2.15.2 (2012-10-26) -- "Trick or Treat"
-Copyright (C) 2012 The R Foundation for Statistical Computing
-ISBN 3-900051-07-0
+R version 3.0.0 (2013-04-03) -- "Masked Marvel"
+Copyright (C) 2013 The R Foundation for Statistical Computing
 Platform: x86_64-unknown-linux-gnu (64-bit)
 
 R is free software and comes with ABSOLUTELY NO WARRANTY.
@@ -184,6 +183,27 @@ true 0.3503825 appx: 0.3504539 lip: 0.349812
 [1] 0.03002706
 [1] 0.03866661
 > 
+> #polyharmonic splines
+> f <- function(x) 10/(10+sum(sqrt(x)))
+> knots <- matrix(runif(6000), 6)
+> phs <- polyh(f, knots, 3)
+> # test it in a random point
+> a <- runif(6)
+> f(a); phs(a)
+[1] 0.7098517
+[1] 0.7101331
+> phs <- polyh(f,knots,6)
+Error in solve.default(mat, rhs) : 
+  Lapack routine dgesv: system is exactly singular: U[8,8] = 0
+Warning message:
+In polyh(f, knots, 6) :
+  Failed to fit exactly, fallback to least squares fit
+> phs(a)
+[1] 0.710679
+> phs <- polyh(f,knots,-20)
+> phs(a)
+[1] 0.7102923
+> 
 > proc.time()
    user  system elapsed 
-  1.420   0.060   1.469 
+ 22.737   0.116  22.166 
