@@ -1,5 +1,0 @@
-PKG_CPPFLAGS=-I/usr/local/include   -DHAVE_FFTW 
-PKG_CFLAGS=$(C_VISIBILITY) 
-PKG_LIBS= -lfftw3 -lm   $(BLAS_LIBS) $(FLIBS)
-
-all: $(SHLIB)

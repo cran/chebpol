@@ -269,7 +269,7 @@ void C_call(double *x, double *y, const int valuedim, void *userdata) {
     // don't need x, because the arg-pointer which is used is set in the
     // R_fcall structure
 
-  double *fv = REAL(eval( *(SEXP*)userdata,R_NilValue));
+  double *fv = REAL(eval( *(SEXP*)userdata, R_BaseEnv));
   for(int i = 0; i < valuedim; i++) y[i] = fv[i];
 }
 
@@ -302,7 +302,7 @@ static SEXP R_evalongrid(SEXP fun, SEXP sgrid) {
 
   // find the dimension of the result
   for(int i = 0; i < rank; i++) REAL(R_arg)[i] = grid[i][0];
-  SEXP fv = eval(R_fcall,R_NilValue);
+  SEXP fv = eval(R_fcall,R_BaseEnv);
   if(!IS_NUMERIC(fv)) error("fun must return a real value");
   valuedim = LENGTH(fv);
   
