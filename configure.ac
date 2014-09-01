@@ -2,11 +2,12 @@
 ## This file is part of chebpol
 ##
 AC_PREREQ(2.61)
+AC_CONFIG_AUX_DIR([src/build/autoconf])
 
 ## ---[ VERSION ]-------------------------------------------------------------
 
 AC_INIT()
-AC_CONFIG_AUX_DIR(src/build/autoconf)
+
 
 AC_ARG_ENABLE([fftw],
        [AS_HELP_STRING([--disable-fftw],[do not use fftw])],
@@ -26,7 +27,7 @@ AC_PROG_CC
 
 ## --- FFTW 3 ----------------------------------------------------------------
 AS_IF([test "x$use_fftw" = "xyes"], [
-  PKG_CHECK_MODULES([FFTW], fftw3,[FFTW=-DHAVE_FFTW],[echo '*** FFTW not found. Compiling with matrix method'])
+  PKG_CHECK_MODULES([FFTW], fftw3, [FFTW=-DHAVE_FFTW], [echo '*** FFTW not found. Compiling with matrix method'])
 ])
 ## --- Output ----------------------------------------------------------------
 AC_SUBST(EXTRA)

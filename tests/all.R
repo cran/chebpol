@@ -85,7 +85,7 @@ phs <- polyh(f, knots, 3)
 # test it in a random point
 a <- runif(6)
 f(a); phs(a)
-phs <- polyh(f,knots,6)
+phs <- polyh(f,knots,5)
 phs(a)
 phs <- polyh(f,knots,-20)
 phs(a)
