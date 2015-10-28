@@ -63,6 +63,7 @@ chebappx <- function(val,intervals=NULL) {
   if(is.null(intervals)) {
     # it's [-1,1] intervals, so drop transformation
     fun <- structure(function(x) .Call(C_evalcheb,cf,x),arity=length(dim(val)))
+    rm(val)
   } else {
     # it's intervals, create mapping into [-1,1]
     if(!is.list(intervals)) stop("intervals should be a list")
@@ -73,6 +74,7 @@ chebappx <- function(val,intervals=NULL) {
     mid <- sapply(intervals,function(x) mean(x))
     imap <- cmpfun(function(x) (x-mid)*ispan)
     fun <- structure(function(x) .Call(C_evalcheb,cf,imap(x)),arity=length(dim(val)),domain=intervals)
+    rm(val)
   }
   fun
 }
