@@ -1,7 +1,7 @@
 
-R Under development (unstable) (2014-08-26 r66478) -- "Unsuffered Consequences"
-Copyright (C) 2014 The R Foundation for Statistical Computing
-Platform: x86_64-unknown-linux-gnu (64-bit)
+R Under development (unstable) (2018-06-19 r74917) -- "Unsuffered Consequences"
+Copyright (C) 2018 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
 
 R is free software and comes with ABSOLUTELY NO WARRANTY.
 You are welcome to redistribute it under certain conditions.
@@ -16,7 +16,6 @@ Type 'demo()' for some demos, 'help()' for on-line help, or
 Type 'q()' to quit R.
 
 > library(chebpol)
-Loading required package: compiler
 > 
 > cat("Have FFTW:",havefftw(),'\n')
 Have FFTW: TRUE 
@@ -159,24 +158,25 @@ true 0.3503825 appx: 0.3504539 lip: 0.349812
 > f <- function(x) 1/(1+25*x^2)
 > grid <- seq(-1,1,length.out=15)
 > val <- f(grid)
-> uc <- Vectorize(ucappx(val))
+> uc <-ucappx(val)
 > # and the Chebyshev
-> ch <- Vectorize(chebappxf(f,15))
+> ch <- chebappxf(f,15)
 > # test it at 10 random points
-> t(replicate(10,{a<-runif(1,-1,1); c(arg=a, uc=uc(a), true=f(a), cheb=ch(a))}))
-              arg         uc       true       cheb
- [1,]  0.47971056 0.13944338 0.14808112 0.18206153
- [2,]  0.46649181 0.14807089 0.15527070 0.18623047
- [3,]  0.07152258 0.89453355 0.88661365 0.91498866
- [4,] -0.99545407 0.03941572 0.03879996 0.03605659
- [5,]  0.21787491 0.44471851 0.45730239 0.44957467
- [6,]  0.67360312 0.08719979 0.08101411 0.05334764
- [7,]  0.50304513 0.12718683 0.13649343 0.17139813
- [8,] -0.09453685 0.82581598 0.81737382 0.85626468
- [9,]  0.07157999 0.89437704 0.88645224 0.91485814
-[10,]  0.07475339 0.88559382 0.87742255 0.90751056
+> a <- runif(10)
+> cbind(uc(a),ch(a),sapply(a,f))
+            [,1]       [,2]       [,3]
+ [1,] 0.06407441 0.06621382 0.06809834
+ [2,] 0.06617528 0.06360246 0.06924614
+ [3,] 0.11594828 0.14931919 0.12230914
+ [4,] 0.99988501 0.99991029 0.99987086
+ [5,] 0.10352571 0.08572641 0.09736984
+ [6,] 0.05097054 0.07112733 0.05403676
+ [7,] 0.06067062 0.07089625 0.06613908
+ [8,] 0.15828227 0.18932872 0.16328805
+ [9,] 0.11594099 0.14929661 0.12229764
+[10,] 0.11554411 0.14804100 0.12166423
 > 
-> uc <- Vectorize(ucappxf(f,15,intervals=c(-1,1)))
+> uc <- ucappxf(f,15,intervals=c(-1,1))
 > a <- runif(1,-1,1)
 > uc(a); ch(a); f(a)
 [1] 0.03903988
@@ -185,20 +185,27 @@ true 0.3503825 appx: 0.3504539 lip: 0.349812
 > 
 > #polyharmonic splines
 > f <- function(x) 10/(10+sum(sqrt(x)))
-> knots <- matrix(runif(6000), 6)
+> knots <- matrix(runif(6000,0,20), 6)
 > phs <- polyh(f, knots, 3)
+> round(fivenum(phs(knots)-apply(knots,2,f)),6)
+[1] 0 0 0 0 0
 > # test it in a random point
-> a <- runif(6)
+> a <- runif(6,0,20)
 > f(a); phs(a)
-[1] 0.7098517
-[1] 0.7101331
-> phs <- polyh(f,knots,5)
-> phs(a)
-[1] 0.7101515
-> phs <- polyh(f,knots,-20)
-> phs(a)
-[1] 0.7102923
+[1] 0.3536114
+[1] 0.3539679
+> phs <- polyh(f,knots,5,FALSE); nphs <- polyh(f,knots,5,TRUE)
+Warning message:
+In polyh(f, knots, 5, FALSE) :
+  Failed to fit exactly, fallback to least squares fit. You could try normalize=TRUE.
+> phs(a); nphs(a)
+[1] 0.3537533
+[1] 0.3539086
+> phs <- polyh(f,knots,-1,FALSE); nphs <- polyh(f,knots,-1,TRUE)
+> phs(a); nphs(a)
+[1] 0.3561987
+[1] 0.3523617
 > 
 > proc.time()
    user  system elapsed 
-  3.180   0.140   2.347 
+  8.850   6.346   4.919 

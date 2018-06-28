@@ -15,7 +15,7 @@
 \item{val}{Array or function. Function values on a grid, or the function
   itself. If it is the values, the \code{dim}-attribute
   must be appropriately set.}
-\item{grid}{A list.  Each element is a vector of grid-points for a
+\item{grid}{A list.  Each element is a vector of ordered grid-points for a
   dimension.  These need not be Chebyshev-knots, nor evenly spaced.}
 \item{...}{Further arguments to the function, if \code{is.function(val)}.}
 }

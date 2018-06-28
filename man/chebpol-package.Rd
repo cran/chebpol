@@ -8,7 +8,7 @@
 \description{
   The package contains methods for creating multivariate Chebyshev
   interpolations for real-valued functions on hypercubes.  Some methods for
-  non-Chebyshev grids are also provided.
+  non-Chebyshev grids are also provided, in particular a polyharmonic spline.
 }
 
 \details{
@@ -45,7 +45,7 @@
   the grid-points.
   There is even an interpolation for uniform grids in
   \code{\link{ucappx}}, with a wrapper in \code{\link{ucappxf}}
-  with interesting examples.  And a more general for arbitrary
+  with some examples.  And a more general for arbitrary
   Cartesian-product grids in \code{\link{chebappxg}} with a wrapper in
   \code{\link{chebappxgf}}. These are based on transforms of Chebyshev-polynomials.
   A multilinear interpolation is available in \code{\link{mlappx}}. And
@@ -55,21 +55,32 @@
   grids (\code{\link{chebknots}}) as well as a support function for evaluating a
   function on a grid (\code{\link{evalongrid}}), and a function for
   finding the Chebyshev coefficients (\code{\link{chebcoef}}).
+
+  All the functions generated accept as an argument a matrix of column
+  vectors. Except for the polyharmonic spline, the generated functions
+  also accept an argument \code{threads=getOption('chebpol.threads')} to
+  utilize more than one CPU if a matrix of column vectors is evaluated.
+  The polyharmonic spline will instead benefit from a multi-threaded
+  BLAS, such as Intel's MKL.
 }
 
 \examples{
-## make some function values on a 3x3x4 grid
-dims <- c(x=3,y=3,z=4)
-value <- array(runif(36),dims)
+## make some function values on a 50x50x50 grid
+dims <- c(x=50,y=50,z=50)
+f <- function(x) sqrt(1+x[1])*exp(x[2])*sin(5*x[3])^2
+value <- evalongrid(f , dims)
 ##fit a Chebyshev approximation to it. Note that the value-array contains the
-##grid-structure.  (However, we don't really approximate the runif-function :)
+##grid-structure. 
 ch <- chebappx(value)
 ## To see the full grid, use the chebknots function and expand.grid
 \dontrun{
-cbind(expand.grid(chebknots(dims)), value=as.numeric(value),
-      appx=as.numeric(evalongrid(ch,dims)))
+head(cbind(expand.grid(chebknots(dims)), value=as.numeric(value),
+      appx=as.numeric(evalongrid(ch,dims))))
 }
 ## evaluate between the grid points
+m <- matrix(runif(15,-1,1),3)
+ch(m)
+apply(m,2,f)
 ch(c(-0.3,0.2,0.16))
 }
 \keyword{DCT}
