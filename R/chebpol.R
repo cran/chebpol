@@ -188,10 +188,11 @@ mlappx <- function(val, grid, ...) {
   gl <- prod(sapply(grid,length))
   if(length(val) != gl)
     stop("length of values ",length(val)," do not match size of grid ",gl)
+  val <- as.numeric(val)
 #  if(adjust!=0) {
 #    val <- val + (val - .Call(C_predmlip,grid,as.numeric(val)))*adjust
 #  }
-  vectorfun(.Call(C_evalmlip,grid,as.numeric(val),x,threads), length(grid), 
+  vectorfun(.Call(C_evalmlip,grid,val,x,threads), length(grid), 
             args=alist(x=,threads=getOption('chebpol.threads')))
 }
 
@@ -269,7 +270,18 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
   }
   w <- wv[1:N]
   v <- wv[(N+1):length(wv)]
-  W <- NULL
+
+  # There's an alternative here: https://mathematica.stackexchange.com/questions/65763/understanding-polyharmonic-splines
+  # with W = B'
+  # solve W' A^{-1} W v = W' A^{-1} val  for v
+  # compute w as A^{-1} val - A^{-1} W v
+  # It's slower than the above, at least with MKL.
+  # W <- t(rbind(1,knots))
+  # Ai <- solve(A)
+  # AiW <- crossprod(Ai,W)
+  # v <- as.numeric(solve(crossprod(W,AiW),t(AiW) %*% val))
+  # w <- as.numeric(Ai %*% val - AiW %*% v)
+
   local(function(x) {
     if(is.vector(x) && length(x) == M) {
       nx <- normfun(x)
