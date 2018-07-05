@@ -5,9 +5,14 @@
 }
 
 .onLoad <- function(libname,pkgname) {
-  options(chebpol.threads=1L)
+  if(is.na(thr <- as.integer(Sys.getenv('CHEBPOL_THREADS')))) thr <- 1L
+  options(chebpol.threads=thr)
 }
 
+phifunc <- function(x,k) {
+# keep NAMED status on x
+  eval.parent(as.call(list(quote(.Call),C_phifunc,x,k)),2)
+}
 # Chebyshev transformation.  I.e. coefficients for given function values in the knots.
 
 # The Chebyshev knots of order n on an interval
@@ -78,7 +83,7 @@ chebappx <- function(val,intervals=NULL) {
                length(intervals),' ',length(dim(val)))
     ispan <- sapply(intervals,function(x) 2/diff(x))
     mid <- sapply(intervals,function(x) mean(x))
-    imap <- cmpfun(function(x) (x-mid)*ispan)
+    imap <- compiler::cmpfun(function(x) (x-mid)*ispan)
 
     fun <- structure(vectorfun(.Call(C_evalcheb,cf,imap(x), threads), K,
                                args=alist(x=,threads=getOption('chebpol.threads'))),
@@ -142,6 +147,38 @@ chebappxgf <- function(fun, grid, ..., mapdim=NULL) {
   chebappxg(evalongrid(fun, ..., grid=grid),grid,mapdim)
 }
 
+
+# General grids, Floater-Hormann
+fhappx <- function(val,grid=NULL, d=1, ...) {
+  x <- threads <- NULL; rm(x,threads) # avoid warning about undefined vars
+  if(is.null(grid)) 
+    stop('Must specify grid')
+  if(!is.list(grid)) grid <- list(grid)
+  if(is.function(val)) val <- evalongrid(val, grid=grid, ...)
+  dd <- as.integer(d)
+  dd <- rep(dd, length(grid) %/% length(d))
+  # calculate weights, formula 18 in Floater & Hormann
+  weights <- lapply(seq_along(grid), function(gg) {
+    g <- grid[[gg]]
+    d <- dd[gg]
+    n = length(g)-1
+    if(d > n) stop(sprintf('d (%d) must be less than dimension (%d)',d,n+1))
+    sapply(seq_along(g)-1L, function(k) {
+      gk <- g[k+1]
+      sum(sapply(intersect(seq(k-d, k), 0:(n-d)), function(i) {
+        sign = if(i %% 2 == 0) 1 else -1
+        pidx <- setdiff(seq(i,i+d),k)
+        sign/prod(gk - g[pidx+1])
+      }))
+    })
+  })
+#  weights <- lapply(grid, function(g) 1/sapply(seq_along(g), function(i) prod((g[i] - g[-i]))))
+#  weights <- NULL
+  vectorfun(.Call(C_FH,x,val,grid,weights,threads), 
+            args=alist(x=,threads=getOption('chebpol.threads')),
+            arity=length(grid))
+}
+
 # we can actually find the grid-maps for uniform grids.
 # the Chebyshev knots are cos(pi*(j+0.5)/n) for j=0..n-1 These should
 # map into the n grid points. These have distance 2/(n-1), starting in -1, ending in 1
@@ -184,6 +221,10 @@ ucappxf <- function(fun, dims, intervals=NULL,...) {
 mlappx <- function(val, grid, ...) {
   x <- threads <- NULL; rm(x,threads) # avoid cran check warning 
   if(is.numeric(grid)) grid <- list(grid)
+  if(any(sapply(grid,is.unsorted))) {
+    if(!is.function(val)) stop('Grid points must be ordered in increasing order')
+    grid <- lapply(grid,sort)
+  }
   if(is.function(val)) val <- evalongrid(val,grid=grid,...)
   gl <- prod(sapply(grid,length))
   if(length(val) != gl)
@@ -206,6 +247,9 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
 # we compute r^2, so powers etc. are adjusted for that case
 # Hmm, I should take a look at http://dx.doi.org/10.1016/j.jat.2012.11.008 for the unit ball
 # perhaps some normalization should be added?
+# I also need to look at fast summation with NFFT
+# https://www-user.tu-chemnitz.de/~potts/nfft/fastsum.php
+# Likewise its interpolation applications which I don't understand yet.
   if(is.null(dim(knots))) dim(knots) <- c(1,length(knots))
   if(is.function(val)) val <- apply(knots,2,val,...)
   N <- ncol(knots)
@@ -216,7 +260,7 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
               k <- as.integer(round(k))
 
   if(is.na(normalize)) normalize <- (min(knots) < 0) || (max(knots) > 1)
-  else if(is.vector(normalize) && length(normalize) == 2L) dim(normalize) <- 1:2
+  else if(length(normalize) == 2L) dim(normalize) <- 1:2
   if(is.matrix(normalize)) {
     if(M %% nrow(normalize) != 0 || ncol(normalize) != 2) 
       stop('normalize must but be a n x 2 matrix with ', M, ' divisible by n(', nrow(normalize), ')')
@@ -237,13 +281,18 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
 
   ki <- k/2
   if(k < 0) {
-    phi <- local(cmpfun(function(r2) exp(k*r2)),list(k=k))
+    phi <- local(compiler::cmpfun(function(r2) exp(k*r2)),list(k=k))
   } else if(k %% 2L == 1L) {
-    phi <- local(cmpfun(function(r2) r2^ki), list(ki=ki))
+    phi <- local(compiler::cmpfun(function(r2) r2^ki), list(ki=ki))
   } else {
     ki <- as.integer(ki)-1L # trick to handle r2=0. Works because 0^0 = 1 in R
-    phi <- local(cmpfun(function(r2) r2^ki * log(r2^r2)),list(ki=ki))
+    phi <- local(compiler::cmpfun(function(r2) r2^ki * log(r2^r2)),list(ki=ki))
   }
+
+  # trickery to get it in place
+  phi <- local(cmpfun(function(x) {
+    eval.parent(as.call(list(quote(.Call), C_phifunc, substitute(x), k)))
+  }), list(k=k))
 
   # would it be faster to apply phi only on lower tri?  Without crossprod?
   # and either fill in the upper tri, or tailor a solver? I think
@@ -255,7 +304,7 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
 #  A <- phi(.Call(C_sqdiffs,knots,knots))  
   # faster:
   A <- phi(abs(-2*crossprod(knots) + sqnm + rep(sqnm,each=N)))
-  diag(A) <- phi(0) 
+  diag(A) <- phi(0)
 
   B <- rbind(1,knots)
   mat <- cbind(rbind(A,B),rbind(t(B),matrix(0,M+1,M+1)))
@@ -282,8 +331,10 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
   # v <- as.numeric(solve(crossprod(W,AiW),t(AiW) %*% val))
   # w <- as.numeric(Ai %*% val - AiW %*% v)
 
-  local(function(x) {
-    if(is.vector(x) && length(x) == M) {
+
+  local(function(x, threads) {
+    if(!missing(threads)) warning('polyh does not support parallel threads')
+    if(!is.matrix(x) && length(x) == M) {
       nx <- normfun(x)
       sum(w*phi(abs(-2*crossprod(nx,knots) + sqnm + sum(nx^2)))) + sum(v*c(1,nx))
     } else {
@@ -295,6 +346,14 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
   }, list(w=w,v=v,knots=knots,phi=phi,sqnm=sqnm,M=M,normfun=normfun))
 }
 
+rbf.alglib <- function(val, knots, rbase=2,  layers=5, lambda=0, ...) {
+  x <- threads <- NULL; rm(x,threads)
+  if(is.null(dim(knots))) dim(knots) <- c(1,length(knots))
+  if(is.function(val)) val <- apply(knots,2,val,...)
+  model <- .Call(C_makerbf, rbind(knots,val), layers, rbase, lambda)
+  vectorfun(.Call(C_evalrbf, model, x, threads), args=alist(x=,threads=1L), arity=nrow(knots))
+}
+havealglib <- function() .Call(C_havealglib)
 
 vectorfun <- function(e,arity,args=alist(x=)) {
   fun <- function() {}
@@ -319,7 +378,7 @@ vectorfun <- function(e,arity,args=alist(x=)) {
       do.call(fun,arglist)
     } else
       stop(sprintf('Function should take %d arguments, you supplied a vector of length %d',arity,length(x)))
-  }, list(fun=fun))
+  }, list(fun=compiler::cmpfun(fun)))
   formals(f) <- args
   f
 }

@@ -1,8 +1,9 @@
 ## 
 ## This file is part of chebpol
 ##
+
 AC_PREREQ(2.62)
-AC_CONFIG_AUX_DIR([src/build/autoconf])
+AC_CONFIG_AUX_DIR([tools/autoconf])
 
 AC_INIT([chebpol])
 AC_CONFIG_SRCDIR([src/chebpol.c])
@@ -11,27 +12,45 @@ AC_CONFIG_FILES([src/Makevars])
 
 AC_ARG_ENABLE([fftw],
        [AS_HELP_STRING([--disable-fftw],[do not use fftw])],
-       [use_fftw=no],[use_fftw=yes])
+       [use_fftw="${enableval}"],[use_fftw=yes])
+
+AC_ARG_ENABLE([alglib],
+  [AS_HELP_STRING([--disable-alglib],[do not use alglib rbf])],
+  [use_alglib="${enableval}"],[use_alglib=yes])
 
 AC_ARG_ENABLE([check],
 	[AS_HELP_STRING([--enable-check],[enable pedantic syntax check])],
-	[EXTRA='-Wall -pedantic'; echo "PEDANTIC CHECK"])
-# some R 
+	[use_check="${enableval}"],[use_check=no])
+
+# some R standards
 if test -n "${R_HOME}"; then
   CC=`${R_HOME}/bin/R CMD config CC`
+  CPP=`${R_HOME}/bin/R CMD config CPP`
   CFLAGS=`${R_HOME}/bin/R CMD config CFLAGS`
   CPPFLAGS=`${R_HOME}/bin/R CMD config CPPFLAGS`
 fi
 
+AS_IF([test "${use_check}" = "yes"], [
+  EXTRA='-Wall -pedantic -Wextra'
+])
+
+AS_IF([test "x${use_alglib}" = xyes], [
+ PKG_CHECK_MODULES([ALGLIB], [alglib >= 3.11], [AC_DEFINE(HAVE_ALGLIB)], [use_alglib=no])
+])
+AC_SUBST(ALGLIB_CFLAGS)
+AC_SUBST(ALGLIB_LIBS)
+
+AS_IF([test "x$use_fftw" = "xyes"], [
+  PKG_CHECK_MODULES([FFTW], fftw3, [have_fftw=yes], [AC_MSG_WARN([FFTW not found. Compiling with matrix method])])
+])
+
+
 AC_LANG([C])
 AC_PROG_CC
 
-## --- FFTW 3 ----------------------------------------------------------------
-AS_IF([test "x$use_fftw" = "xyes"], [
-  PKG_CHECK_MODULES([FFTW], fftw3, [have_fftw=yes], [echo '*** FFTW not found. Compiling with matrix method'])
-])
 
-if test "x$have_fftw" = "xyes" ; then
+AS_IF([test "x$have_fftw" = "xyes" ], [
+ # figure out if it works
   AC_MSG_CHECKING(for working fftw_plan_r2r in R)
   echo ['#include <stdlib.h>
     #include <fftw3.h>
@@ -47,28 +66,29 @@ if test "x$have_fftw" = "xyes" ; then
   echo "dyn.load('conftest.so'); .Call('xxx_check')" > conftest.R
   ${R_HOME}/bin/R --slave < conftest.R
   stat=$?
-  if test "x$stat" == "x13" ; then
+  AS_IF([test "x$stat" == "x13"], [
     AC_MSG_RESULT(yes)
     AC_DEFINE(HAVE_FFTW)
-  else
+  ],[
     AC_MSG_RESULT(no)
+    AC_MSG_WARN([Your FFTW can't do 2d r2r-transforms, could it be MKL?])
     AC_MSG_CHECKING(static linking of FFTW)
     FFTW_LIBS="-Wl,-Bsymbolic-functions,-Bstatic,$FFTW_LIBS,-Bdynamic"
     touch conftest.c
     ${R_HOME}/bin/R CMD SHLIB -o conftest.so conftest.c $FFTW_LIBS >& /dev/null    
     ${R_HOME}/bin/R --slave >& /dev/null < conftest.R
     stat=$?
-    if test "x$stat" == "x13"; then
+    AS_IF([test "x$stat" == "x13"], [
       AC_MSG_RESULT(yes)
       AC_DEFINE(HAVE_FFTW)
-    else
+    ],[
       AC_MSG_RESULT([no, compiling with slow matrix method])
       FFTW_LIBS=
       FFTW_CFLAGS=
-    fi
-  fi
-  rm -f conftest.o conftest.c conftest.so
-fi
+    ])
+  ])
+  rm -f conftest.o conftest.c conftest.so conftest.R
+])
 
 ## --- Output ----------------------------------------------------------------
 AC_SUBST(OPENMP_CFLAGS)

@@ -6,6 +6,7 @@
 #include <R_ext/BLAS.h>
 #include <R_ext/Visibility.h>
 #include "config.h"
+#include "chebpol.h"
 #ifdef HAVE_FFTW
 #include <fftw3.h>
 #endif
@@ -149,28 +150,140 @@ static SEXP R_chebcoef(SEXP x, SEXP sdct) {
   return resvec;
 }
 
+static double C_FH(double *fv, double *x, double **knots, int *dims, const int rank, double **weights) {
+  // Use Floater-Hormann method
+  if(rank == 0) return fv[0];
+  int siz = 1;
+  const int newrank = rank-1;
+  const int N = dims[newrank];
+  const double xx = x[newrank];
+  double *kn = knots[newrank];
+  double *w = weights[newrank];
+  for(int i = 0; i < newrank; i++) siz *= dims[i];
+  double num=0, denom=0;
+
+  // Special case:
+  for(int i = 0; i < N; i++) {
+    if(xx == kn[i]) return C_FH(&fv[i*siz], x, knots, dims, newrank, weights);
+  }
+
+#if 1
+  // save a recursion step
+  if(newrank == 0) {
+    for(int i = 0; i < N; i++) {
+      const double val = fv[i];
+      double pole = w[i] / (xx-kn[i]);  // Should have used the weights instead of 1.0 and the sign
+      //      if( (i&1) == 1) pole = -pole;
+      //      if(i == 0 || i == N-1) pole = 0.5*pole;
+      num += pole * val;
+      denom += pole;
+    }
+    return num/denom;
+  }
+#endif 
+  for(int i = 0,j=0; i < N; i++,j+=siz) {
+    const double val = C_FH(&fv[j], x, knots, dims, newrank, weights);
+    double pole = w[i] / (xx-kn[i]); // Should have used the weights instead of 1.0 and the sign
+    //    if( (i&1) == 1) pole = -pole;
+    //    if(i == 0 || i == N-1) pole = 0.5*pole;
+    num += pole * val;
+    denom += pole;
+  }
+  return num/denom;
+}
+
+static SEXP R_FH(SEXP inx, SEXP vals, SEXP grid, SEXP Sweights, SEXP Rthreads) {
+  int *dims;
+  int siz = 1;
+  double *val = REAL(vals);
+  int threads = INTEGER(AS_INTEGER(Rthreads))[0];
+  SEXP dim;
+  int rank;
+
+  // Create some pointers and stuff. 
+  dim = getAttrib(vals,R_DimSymbol);
+  dims = INTEGER(dim);
+  rank = LENGTH(dim);
+  if(rank <= 0) error("rank must be positive");
+  if(isMatrix(inx)) {
+    if(rank != nrows(inx))
+      error("coeffcient rank(%d) must match number of rows(%d)",LENGTH(dim),nrows(inx));
+  } else {
+    if(rank != LENGTH(inx))
+      error("coefficient rank(%d) does not match argument length(%d)",
+	    LENGTH(dim),LENGTH(inx));
+  }
+  /* This shouldn't happen, but we check it anyway since we'll bomb if it's wrong */
+  for(int i = 0; i < rank; i++)  siz *= dims[i];
+  if(LENGTH(vals) != siz)
+    error("coefficient length(%d) does not match data length(%d)",
+	  LENGTH(vals),siz);
+
+  if(LENGTH(grid) != rank)
+    error("There must be one value for each knot");
+  double **knots = (double **) R_alloc(rank,sizeof(double*));
+  double **weights = (double **) R_alloc(rank, sizeof(double*));
+  for(int i = 0; i < rank; i++) {
+    knots[i] = REAL(VECTOR_ELT(grid,i));
+    weights[i] = REAL(VECTOR_ELT(Sweights,i));
+  }
+  double *xp = REAL(inx);
+  const int numvec = isMatrix(inx) ? ncols(inx) : 1;
+#ifdef RETMAT
+  SEXP resvec = PROTECT(allocMatrix(REALSXP, numvec, 1));
+#else
+  SEXP resvec = PROTECT(NEW_NUMERIC(numvec));
+#endif
+  double *out = REAL(resvec);
+  int useomp = 0;
+#ifdef _OPENMP
+  useomp = numvec > 1 && threads > 1;
+#endif
+  if(useomp) {
+#pragma omp parallel for num_threads(threads) schedule(static)
+    for(int i = 0; i < numvec; i++) {
+      out[i] = C_FH(val, xp+i*rank, knots, dims, rank, weights);
+    }
+  } else {
+    for(int i = 0; i < numvec; i++) {
+      out[i] = C_FH(val, xp+i*rank, knots, dims, rank, weights);
+    }
+  }
+  UNPROTECT(1);
+  return resvec;
+}
+
 static double C_evalcheb(double *cf, double *x, int *dims, const int rank) {
   if(rank == 0) return cf[0];
   // Otherwise, use the Clenshaw algorithm
   int siz = 1;
   const int newrank = rank-1;
   const int N = dims[newrank];
+  double x2 = 2.0*x[newrank], bn1=0, bn2=0, bn=0;
 
+#if 1
+  // semantically unnecessary, just save a recursion level, it speeds up things.
+  if(newrank == 0) {
+    for(int i = N-1; i > 0; i--) {
+      bn2 = bn1; bn1 = bn;
+      bn = x2*bn1 - bn2 + cf[i];
+    }
+    return x[0]*bn - bn1 + cf[0];
+  }
+#endif
   for(int i= 0; i < newrank; i++) siz *= dims[i];
-  double x0 = x[newrank], bn1=0, bn2=0, bn=0;
   for(int i = N-1,j=siz*(N-1); i >= 0; i--,j-=siz) {
     bn2 = bn1; bn1 = bn;
-    bn = 2*x0*bn1 - bn2 + C_evalcheb(&cf[j],x,dims,newrank);
+    bn = x2*bn1 - bn2 + C_evalcheb(&cf[j],x,dims,newrank);
   }
-  return bn - x0*bn1;
+  return bn - x[newrank]*bn1;
 }
 
 static SEXP R_evalcheb(SEXP coef, SEXP inx, SEXP Rthreads) {
   int *dims;
   int siz = 1;
   double *cf = REAL(coef);
-  const int threads = INTEGER(AS_INTEGER(Rthreads))[0];
-  SEXP resvec;
+  int threads = INTEGER(AS_INTEGER(Rthreads))[0];
   SEXP dim;
   int rank;
 
@@ -194,20 +307,33 @@ static SEXP R_evalcheb(SEXP coef, SEXP inx, SEXP Rthreads) {
 	  LENGTH(coef),siz);
 
   double *xp = REAL(inx);
-  int numvec = isMatrix(inx) ? ncols(inx) : 1;
-  PROTECT(resvec = NEW_NUMERIC(numvec));
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(threads)
+  const int numvec = isMatrix(inx) ? ncols(inx) : 1;
+#ifdef RETMAT
+  SEXP resvec = PROTECT(allocMatrix(REALSXP, numvec, 1));
+#else
+  SEXP resvec = PROTECT(NEW_NUMERIC(numvec));
 #endif
-  for(int i = 0; i < ncols(inx); i++) {
-    REAL(resvec)[i] = C_evalcheb(cf, xp+i*rank, dims, rank);
+  double *out = REAL(resvec);
+  int useomp = 0;
+#ifdef _OPENMP
+  useomp = numvec > 2 && threads > 1;
+#endif
+  if(useomp) {
+#pragma omp parallel for num_threads(threads) schedule(static)
+    for(int i = 0; i < numvec; i++) {
+      out[i] = C_evalcheb(cf, xp+i*rank, dims, rank);
+    }
+  } else {
+    for(int i = 0; i < numvec; i++) {
+      out[i] = C_evalcheb(cf, xp+i*rank, dims, rank);
+    }
   }
   UNPROTECT(1);
   return resvec;
 }
 
 // an R-free evalongrid. Recursive
-void C_evalongrid(void (*fun)(double *x, double *y, int valuedim, void *ud),
+static void C_evalongrid(void (*fun)(double *x, double *y, int valuedim, void *ud),
 		double *arg, double **grid,
 		const int *dims, const int rank, const int valuedim, double *result, void *userdata) {
   int mrank = rank-1;
@@ -225,10 +351,10 @@ void C_evalongrid(void (*fun)(double *x, double *y, int valuedim, void *ud),
   }
 }
 
-void C_call(double *x, double *y, const int valuedim, void *userdata) {
+static void C_call(double *x, double *y, const int valuedim, void *userdata) {
     // don't need x, because the arg-pointer which is used is set in the
     // R_fcall structure
-
+  if(x == NULL) {}; // avoid warning
   double *fv = REAL(eval( *(SEXP*)userdata, R_BaseEnv));
   for(int i = 0; i < valuedim; i++) y[i] = fv[i];
 }
@@ -238,7 +364,7 @@ static SEXP R_evalongrid(SEXP fun, SEXP sgrid) {
   int rank = LENGTH(sgrid);
   double *grid[rank];
   int *dims;
-  double len=1.0;
+  R_xlen_t len=1.0;
   SEXP resvec;
   SEXP R_fcall;
   SEXP R_arg;
@@ -426,7 +552,6 @@ static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
   int dims[rank];
   int threads = INTEGER(AS_INTEGER(Rthreads))[0];
   double *grid[rank];
-  SEXP resvec;
 
   if(!IS_NUMERIC(values)) error("values must be numeric");
   if(!IS_NUMERIC(x)) error("argument x must be numeric");  
@@ -445,12 +570,17 @@ static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
 				       gridsize,LENGTH(values));
   const int numvec = isMatrix(x) ? ncols(x) : 1;
   double *xp = REAL(x);
-  PROTECT(resvec = NEW_NUMERIC(numvec));
+#ifdef RETMAT
+  SEXP resvec = PROTECT(allocMatrix(REALSXP, numvec, 1));
+#else
+  SEXP resvec = PROTECT(NEW_NUMERIC(numvec));
+#endif
+  double *out = REAL(resvec);
 #ifdef _OPENMP
-#pragma omp parallel for num_threads(threads)
+#pragma omp parallel for num_threads(threads) schedule(static)
 #endif
   for(int i = 0; i < numvec; i++) {
-    REAL(resvec)[i] = C_evalmlip(rank,xp+i*rank,grid,dims,REAL(values));
+    out[i] = C_evalmlip(rank,xp+i*rank,grid,dims,REAL(values));
   }
   UNPROTECT(1);
   return resvec;
@@ -495,19 +625,66 @@ static SEXP R_havefftw() {
   return res;
 }
 
+// inplace to save memory
+static SEXP R_phifunc(SEXP Sx, SEXP Sk) {
+  double k = REAL(AS_NUMERIC(Sk))[0];
+  double *x = REAL(Sx);
+  double *y;
+  SEXP res;
+  if(XLENGTH(Sx) == 1 && x[0] == 0.0) return ScalarReal((k<0)?1:0);
+
+  if(MAYBE_REFERENCED(Sx)) {
+    res = PROTECT(NEW_NUMERIC(XLENGTH(Sx)));
+    y = REAL(res);
+  } else {
+    res = Sx;
+    y = x;
+  }
+
+  if(k < 0) {
+    for(R_xlen_t i = 0; i < XLENGTH(Sx); i++) y[i] = exp(k*x[i]);
+  } else {
+    int ki = INTEGER(AS_INTEGER(Sk))[0];
+    if(ki % 2 == 1) {
+      for(R_xlen_t i = 0; i < XLENGTH(Sx); i++) {
+	// it's the sqrt(x) to ki'th power
+	double xx = sqrt(x[i]), xi=1;
+	for(R_xlen_t j = 0; j < ki; j++) xi *= xx;
+	y[i] = xi;
+      }
+    } else {
+      for(R_xlen_t i = 0; i < XLENGTH(Sx); i++) {
+	// it's sqrt(x) to ki'th power, multiplied by 0.5 log(x)
+	if(x[i] <= 0.0) {y[i]=0.0;continue;}
+	double xx = sqrt(x[i]), xi=1;
+	for(R_xlen_t j = 0; j < ki; j++) xi *= xx;
+	y[i] = xi * 0.5 * log(x[i]);
+      }
+    }
+  }
+  if(y != x) UNPROTECT(1);
+  return res;
+}
+
 R_CallMethodDef callMethods[] = {
   {"evalcheb", (DL_FUNC) &R_evalcheb, 3},
   {"chebcoef", (DL_FUNC) &R_chebcoef, 2},
+  {"FH", (DL_FUNC) &R_FH, 5},
   {"evalmlip", (DL_FUNC) &R_evalmlip, 4},
   {"predmlip", (DL_FUNC) &R_mlippred, 2},
   {"evalongrid", (DL_FUNC) &R_evalongrid, 2},
   {"havefftw", (DL_FUNC) &R_havefftw, 0},
   {"sqdiffs", (DL_FUNC) &R_sqdiffs, 2},
+  {"phifunc", (DL_FUNC) &R_phifunc, 2},
+  {"makerbf", (DL_FUNC) &R_makerbf, 4},
+  {"evalrbf", (DL_FUNC) &R_evalrbf, 3},
+  {"havealglib", (DL_FUNC) &R_havealglib, 0},
   {NULL, NULL, 0}
 };
 
 
 void attribute_visible R_init_chebpol(DllInfo *info) {
+  if(info != NULL) {}; // avoid warning about unused parameter
   /* register our routines */
   R_registerRoutines(info,NULL,callMethods,NULL,NULL);
   R_useDynamicSymbols(info, FALSE);
@@ -517,6 +694,7 @@ void attribute_visible R_init_chebpol(DllInfo *info) {
 }
 #ifdef HAVE_FFTW
 void attribute_visible R_unload_chebpol(DllInfo *info) {
+  if(info == NULL) {};
   // Clean up fftw
   fftw_cleanup();
 }
