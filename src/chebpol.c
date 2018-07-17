@@ -4,95 +4,132 @@
 #include <Rdefines.h>
 #include <R_ext/Rdynload.h>
 #include <R_ext/BLAS.h>
+#include <R_ext/Lapack.h>
+#include <R_ext/Applic.h>
 #include <R_ext/Visibility.h>
 #include "config.h"
 #include "chebpol.h"
+#define UNUSED(x) (void)(x)
 #ifdef HAVE_FFTW
 #include <fftw3.h>
 #endif
 
-static void chebcoef(double *x, int *dims, int *dimlen, double *F, int dct) {
-  int siz = 1;
-  const int rank = *dimlen;
+static void chebcoef(double *x, int *dims, const int rank, double *F, int dct, int threads) {
+  R_xlen_t siz = 1;
   for(int i = 0; i < rank; i++) siz *= dims[i];
 
 #ifdef HAVE_FFTW
+  int brokenfftw = 0;
   double isiz = 1.0/siz;
   int rdims[rank];
   /* Create a plan */
   fftw_r2r_kind kind[rank];
   for(int i = 0; i < rank; i++) kind[i] = FFTW_REDFT10;  // type II DCT
-
+  
   // reverse the dimensions. fftw uses row-major order. 
   for(int i = 0; i < rank; i++) rdims[i] = dims[rank-i-1];
-
+  
   // Plan and execute
   
   fftw_plan plan = fftw_plan_r2r(rank, rdims, x, F, kind, FFTW_ESTIMATE|FFTW_PRESERVE_INPUT);
-  if(plan == NULL) error("FFTW can't create execution plan for transform");
-  fftw_execute(plan);
-  // A new plan with the same parameters is fast to create it says, so we destroy this to
-  // clean up memory
-  fftw_destroy_plan(plan);
-  // adjust scale to fit our setup
-  if(!dct) for(int i = 0; i < siz; i++) F[i] *= isiz;
-#else
-  double *src, *dest, *buf;
-  double **mat;
-  double beta=0;
-
-  // Some work space
-  // 
-  buf = (double*) R_alloc(siz,sizeof(double));
-  mat = (double**) R_alloc(rank,sizeof(double*));
-  // Create the needed transform matrices
-  // reuse same dimension matrices
-  for(int j = 0; j < rank; j++) {
-    // Is it there already?
-    int N = dims[j];
-    double *jmat = NULL;
-    for(int k = 0; k < j; k++) {
-      if(dims[k] == N) {
-	jmat = mat[k];
+  if(plan != NULL) {
+    fftw_execute(plan);
+    fftw_destroy_plan(plan);
+  } else {
+    // That's funny, perhaps we've been given MKL with its amputated FFTW?
+    // Let's try a series of strided 1d-transforms
+    for(R_xlen_t i = 0; i < siz; i++) F[i] = x[i];
+    int stride = 1;
+    for(int i = 0; i < rank; i++) {
+      fftw_iodim dim;
+      fftw_plan plan;
+      fftw_r2r_kind kind = FFTW_REDFT10;
+      const int tlen = dims[i];
+      const int ntrans = siz/tlen;
+      dim.n = tlen;
+      dim.is = stride;
+      dim.os = stride;
+      plan = fftw_plan_guru_r2r(1, &dim, 0, NULL, F, F, &kind, FFTW_ESTIMATE);
+      if(plan == NULL) {
+	if(tlen > 10000) warning("FFTW fails on strided long (%d) vector, is it MKL?",tlen);
+	brokenfftw = 1;
 	break;
       }
+      // Do them
+#pragma omp parallel for num_threads(threads) schedule(static) if (threads > 1)
+      for(R_xlen_t j = 0; j < ntrans; j++) {
+	div_t dv = div(j, stride);
+	int offset = dv.rem + stride*tlen * dv.quot;
+	fftw_execute_r2r(plan, F+offset, F+offset);
+      }
+      fftw_destroy_plan(plan);
+      stride *= tlen;
     }
-    if(jmat != NULL) {
-      mat[j] = jmat;
-      continue;
-    }
-    jmat = mat[j] = (double*) R_alloc(N*N,sizeof(double));
-    for(int k = 0; k < N; k++) {
-      double *jkvec = &jmat[k*N];
-      for(int i = 0; i < N; i++) {
-	jkvec[i] = cospi(k*(i+0.5)/N);
+  }
+  // adjust scale to fit our setup
+  if(!dct) for(int i = 0; i < siz; i++) F[i] *= isiz;
+
+  if(brokenfftw) {
+#endif
+    double *src, *dest, *buf;
+    double **mat;
+    double beta=0;
+    
+    // Some work space
+    // 
+    buf = (double*) R_alloc(siz,sizeof(double));
+    mat = (double**) R_alloc(rank,sizeof(double*));
+    // Create the needed transform matrices
+    // reuse same dimension matrices
+    for(int j = 0; j < rank; j++) {
+      // Is it there already?
+      int N = dims[j];
+      if(N > 10000) warning("Long vector (%d), no FFTW. This may go wrong.",N);
+      double *jmat = NULL;
+      for(int k = 0; k < j; k++) {
+	if(dims[k] == N) {
+	  jmat = mat[k];
+	  break;
+	}
+      }
+      if(jmat != NULL) {
+	mat[j] = jmat;
+	continue;
+      }
+      jmat = mat[j] = (double*) R_alloc(N*N,sizeof(double));
+      for(int k = 0; k < N; k++) {
+	double *jkvec = &jmat[k*N];
+	for(int i = 0; i < N; i++) {
+	  jkvec[i] = cospi(k*(i+0.5)/N);
+	}
       }
     }
-  }
-  // We will switch src and dest between F and buf
-  // We should end up with dest=F, so if 
-  // rank is odd we should start with src = F, dest=buf
-  if((rank & 1) == 1) {
-    src = F;
-    dest = buf;
-  } else {
-    src = buf;
-    dest = F;
-  }
-  memcpy(dest,x,siz*sizeof(double));
-  for(int i = rank-1; i >= 0; i--) {
-    // transformation of dimension i, put in front
-    int N = dims[i];  // length of transform
-    int stride = siz/N;
-    double alpha = dct ? 2.0 : 2.0/N;  // Constant for transform
-    // swap src and dest
-    double *p = src;
-    src = dest;
-    dest = p;
-
-    F77_CALL(dgemm)("TRANS","TRANS",&N,&stride,&N,&alpha,mat[i],&N,src,&stride,&beta,dest,&N);
-    // Fix the first element in each vector, nah do it at the end
-    //    for(int k = 0; k < siz; k+= N) dest[k] *= 0.5;
+    // We will switch src and dest between F and buf
+    // We should end up with dest=F, so if 
+    // rank is odd we should start with src = F, dest=buf
+    if((rank & 1) == 1) {
+      src = F;
+      dest = buf;
+    } else {
+      src = buf;
+      dest = F;
+    }
+    memcpy(dest,x,siz*sizeof(double));
+    for(int i = rank-1; i >= 0; i--) {
+      // transformation of dimension i, put in front
+      int N = dims[i];  // length of transform
+      int stride = siz/N;
+      double alpha = dct ? 2.0 : 2.0/N;  // Constant for transform
+      // swap src and dest
+      double *p = src;
+      src = dest;
+      dest = p;
+      
+      F77_CALL(dgemm)("TRANS","TRANS",&N,&stride,&N,&alpha,mat[i],&N,src,&stride,&beta,dest,&N);
+      // Fix the first element in each vector, nah do it at the end
+      //    for(int k = 0; k < siz; k+= N) dest[k] *= 0.5;
+    }
+#ifdef HAVE_FFTW
   }
 #endif
   if(!dct) {
@@ -114,7 +151,7 @@ static void chebcoef(double *x, int *dims, int *dimlen, double *F, int dct) {
 
 
 
-static SEXP R_chebcoef(SEXP x, SEXP sdct) {
+static SEXP R_chebcoef(SEXP x, SEXP sdct, SEXP Sthreads) {
 
   SEXP dim;
   int rank;
@@ -123,6 +160,7 @@ static SEXP R_chebcoef(SEXP x, SEXP sdct) {
   SEXP resvec;
   int sdims;
   int dct;
+  int threads = INTEGER(AS_INTEGER(Sthreads))[0];
   if(!isLogical(sdct) || LENGTH(sdct) < 1) error("dct must be a logical");
   dct = LOGICAL(sdct)[0];
   dim = getAttrib(x,R_DimSymbol);
@@ -142,7 +180,7 @@ static SEXP R_chebcoef(SEXP x, SEXP sdct) {
   if(siz == 0) error("array size must be positive");
 
   PROTECT(resvec = NEW_NUMERIC(siz));
-  chebcoef(REAL(x),dims,&rank,REAL(resvec),dct);
+  chebcoef(REAL(x),dims,rank,REAL(resvec),dct,threads);
   setAttrib(resvec,R_DimSymbol,dim);
   setAttrib(resvec,R_DimNamesSymbol,getAttrib(x,R_DimNamesSymbol));
   UNPROTECT(1);
@@ -150,7 +188,7 @@ static SEXP R_chebcoef(SEXP x, SEXP sdct) {
   return resvec;
 }
 
-static double C_FH(double *fv, double *x, double **knots, int *dims, const int rank, double **weights) {
+static double FH(double *fv, double *x, double **knots, int *dims, const int rank, double **weights) {
   // Use Floater-Hormann method
   if(rank == 0) return fv[0];
   int siz = 1;
@@ -164,7 +202,7 @@ static double C_FH(double *fv, double *x, double **knots, int *dims, const int r
 
   // Special case:
   for(int i = 0; i < N; i++) {
-    if(xx == kn[i]) return C_FH(&fv[i*siz], x, knots, dims, newrank, weights);
+    if(fabs(xx - kn[i]) < 10.0*DOUBLE_EPS) return FH(&fv[i*siz], x, knots, dims, newrank, weights);
   }
 
 #if 1
@@ -172,9 +210,7 @@ static double C_FH(double *fv, double *x, double **knots, int *dims, const int r
   if(newrank == 0) {
     for(int i = 0; i < N; i++) {
       const double val = fv[i];
-      double pole = w[i] / (xx-kn[i]);  // Should have used the weights instead of 1.0 and the sign
-      //      if( (i&1) == 1) pole = -pole;
-      //      if(i == 0 || i == N-1) pole = 0.5*pole;
+      double pole = w[i] / (xx-kn[i]);  
       num += pole * val;
       denom += pole;
     }
@@ -182,24 +218,22 @@ static double C_FH(double *fv, double *x, double **knots, int *dims, const int r
   }
 #endif 
   for(int i = 0,j=0; i < N; i++,j+=siz) {
-    const double val = C_FH(&fv[j], x, knots, dims, newrank, weights);
-    double pole = w[i] / (xx-kn[i]); // Should have used the weights instead of 1.0 and the sign
-    //    if( (i&1) == 1) pole = -pole;
-    //    if(i == 0 || i == N-1) pole = 0.5*pole;
+    const double val = FH(&fv[j], x, knots, dims, newrank, weights);
+    double pole = w[i] / (xx-kn[i]);
     num += pole * val;
     denom += pole;
   }
   return num/denom;
 }
 
-static SEXP R_FH(SEXP inx, SEXP vals, SEXP grid, SEXP Sweights, SEXP Rthreads) {
+static SEXP R_FH(SEXP inx, SEXP vals, SEXP grid, SEXP Sweights, SEXP Rthreads, SEXP spare) {
   int *dims;
   int siz = 1;
   double *val = REAL(vals);
   int threads = INTEGER(AS_INTEGER(Rthreads))[0];
   SEXP dim;
   int rank;
-
+  UNUSED(spare);
   // Create some pointers and stuff. 
   dim = getAttrib(vals,R_DimSymbol);
   dims = INTEGER(dim);
@@ -235,22 +269,58 @@ static SEXP R_FH(SEXP inx, SEXP vals, SEXP grid, SEXP Sweights, SEXP Rthreads) {
   SEXP resvec = PROTECT(NEW_NUMERIC(numvec));
 #endif
   double *out = REAL(resvec);
-  int useomp = 0;
-#ifdef _OPENMP
-  useomp = numvec > 1 && threads > 1;
-#endif
-  if(useomp) {
-#pragma omp parallel for num_threads(threads) schedule(static)
-    for(int i = 0; i < numvec; i++) {
-      out[i] = C_FH(val, xp+i*rank, knots, dims, rank, weights);
-    }
-  } else {
-    for(int i = 0; i < numvec; i++) {
-      out[i] = C_FH(val, xp+i*rank, knots, dims, rank, weights);
-    }
+#pragma omp parallel for num_threads(threads) schedule(static) if (numvec > 1 && threads > 1)
+  for(int i = 0; i < numvec; i++) {
+    out[i] = FH(val, xp+i*rank, knots, dims, rank, weights);
   }
   UNPROTECT(1);
   return resvec;
+}
+
+// Compute the weights for Floater-Hormann. Formula (18) of the FH-paper
+static SEXP R_fhweights(SEXP Sgrid, SEXP Sd, SEXP Sthreads) {
+  if(LENGTH(Sgrid) != LENGTH(Sd)) 
+    error("Length of grid (%d) should equal length of d (%d)",LENGTH(Sgrid),LENGTH(Sd));
+
+  const int rank = LENGTH(Sgrid);
+  double *grid[rank];
+  int *dims = (int*) R_alloc(rank,sizeof(int));
+  for(int i = 0; i < rank; i++) {
+    grid[i] = REAL(VECTOR_ELT(Sgrid,i));
+    dims[i] = LENGTH(VECTOR_ELT(Sgrid,i));
+  }
+  double *wlist[rank];
+  SEXP ret = PROTECT(NEW_LIST(rank));
+  for(int i = 0; i < rank; i++) {
+    SET_VECTOR_ELT(ret,i,NEW_NUMERIC(dims[i]));
+    wlist[i] = REAL(VECTOR_ELT(ret,i));
+  }
+
+  const int *dd = INTEGER(AS_INTEGER(Sd));
+  int threads = INTEGER(AS_INTEGER(Sthreads))[0];
+
+  for(int r = 0; r < rank; r++) {
+    const double *gr = grid[r];
+    double *w = wlist[r];
+    const int d = dd[r];
+    const int n = dims[r]-1;
+#pragma omp parallel for schedule(static) num_threads(threads) if(threads > 1)
+    for(int k = 0; k <= n; k++) {
+      const int start = (k < d) ? 0 : k-d, end = (k < n-d) ? k : n-d;
+      double sum = 0.0;
+      for(int i = start; i <= end; i++) {
+	double prod = 1.0;
+	for(int j = i; j <= i+d; j++) {
+	  if(j==k) continue;
+	  prod *= gr[k]-gr[j];
+	}
+	sum += 1.0/fabs(prod);
+      }
+      w[k] = sum * ( (abs(k-d) % 2 == 1) ? -1.0 : 1.0);
+    }
+  }
+  UNPROTECT(1);
+  return ret;
 }
 
 static double C_evalcheb(double *cf, double *x, int *dims, const int rank) {
@@ -279,14 +349,14 @@ static double C_evalcheb(double *cf, double *x, int *dims, const int rank) {
   return bn - x[newrank]*bn1;
 }
 
-static SEXP R_evalcheb(SEXP coef, SEXP inx, SEXP Rthreads) {
+static SEXP R_evalcheb(SEXP coef, SEXP inx, SEXP Rthreads, SEXP spare) {
   int *dims;
   int siz = 1;
   double *cf = REAL(coef);
   int threads = INTEGER(AS_INTEGER(Rthreads))[0];
   SEXP dim;
   int rank;
-
+  UNUSED(spare);
   // Create some pointers and stuff. 
   dim = getAttrib(coef,R_DimSymbol);
   dims = INTEGER(dim);
@@ -314,22 +384,82 @@ static SEXP R_evalcheb(SEXP coef, SEXP inx, SEXP Rthreads) {
   SEXP resvec = PROTECT(NEW_NUMERIC(numvec));
 #endif
   double *out = REAL(resvec);
-  int useomp = 0;
-#ifdef _OPENMP
-  useomp = numvec > 2 && threads > 1;
-#endif
-  if(useomp) {
-#pragma omp parallel for num_threads(threads) schedule(static)
-    for(int i = 0; i < numvec; i++) {
-      out[i] = C_evalcheb(cf, xp+i*rank, dims, rank);
-    }
-  } else {
-    for(int i = 0; i < numvec; i++) {
-      out[i] = C_evalcheb(cf, xp+i*rank, dims, rank);
-    }
+#pragma omp parallel for num_threads(threads) schedule(static) if (numvec > 1 && threads > 1)
+  for(int i = 0; i < numvec; i++) {
+    out[i] = C_evalcheb(cf, xp+i*rank, dims, rank);
   }
   UNPROTECT(1);
   return resvec;
+}
+
+double C_evalpolyh(const double *x, const double *knots, const double *weights, 
+		   const double *lweights, const int rank, const int nknots, const double k) {
+  // Find squared distance to each knot
+  int ki = (int) k;
+  double wsum = 0.0;
+  if(k < 0) {
+    for(int i = 0; i < nknots; i++) {
+      const double *kn = &knots[i*rank];
+      double sqdist = 0.0;
+      for(int j = 0; j < rank; j++) sqdist += (x[j]-kn[j])*(x[j]-kn[j]);
+      wsum += weights[i]*exp(k*sqdist);
+    }
+  } else if(ki % 2 == 1) {
+    for(int i = 0; i < nknots; i++) {
+      const double *kn = &knots[i*rank];
+      double sqdist = 0.0;
+      for(int j = 0; j < rank; j++) sqdist += (x[j]-kn[j])*(x[j]-kn[j]);
+      if(sqdist == 0) continue;
+      wsum += weights[i] * R_pow_di(sqrt(sqdist), ki);
+    }
+  } else {
+    for(int i = 0; i < nknots; i++) {
+      const double *kn = &knots[i*rank];
+      double sqdist = 0.0;
+      for(int j = 0; j < rank; j++) sqdist += (x[j]-kn[j])*(x[j]-kn[j]);
+      if(sqdist == 0) continue;
+      wsum += weights[i] * log(sqrt(sqdist)) * R_pow_di(sqrt(sqdist), ki);
+    }
+  }
+  // then the linear part, constant is the first element
+  wsum += lweights[0];
+  for(int i = 0; i < rank; i++) wsum += lweights[i+1] * x[i];
+  return wsum;
+}
+SEXP R_evalpolyh(SEXP inx, SEXP Sknots, SEXP weights, SEXP lweights, SEXP Sk, SEXP Sthreads, SEXP spare) {
+  double *x = REAL(inx);
+  double *knots = REAL(Sknots);
+  double *w = REAL(weights);
+  double *lw = REAL(lweights);
+  double k = REAL(AS_NUMERIC(Sk))[0];
+  int threads = INTEGER(AS_INTEGER(Sthreads))[0];
+  int numvec;
+  const int rank = nrows(Sknots);
+  UNUSED(spare);
+  if(LENGTH(lweights) != rank+1) 
+    error("linear weights (%d) should be one longer than rank(%d)",
+	  LENGTH(lweights),rank);
+  if(LENGTH(weights) != ncols(Sknots))
+    error("number of weights (%d) should equal number of knots (%d)",
+	  LENGTH(weights), ncols(Sknots));
+  if(isMatrix(inx)) {
+    if(nrows(inx) != nrows(Sknots))
+      error("Dimension of input (%d) must match dimension of interpolant (%d)",nrows(inx),nrows(Sknots));
+    numvec = ncols(inx);
+  } else {
+    if(length(inx) != nrows(Sknots))
+      error("Dimension of input (%d) must match dimension of interpolant (%d)",length(inx),nrows(Sknots));
+    numvec = 1;
+  }
+  SEXP res = PROTECT(NEW_NUMERIC(numvec));
+  double *out = REAL(res);
+
+#pragma omp parallel for num_threads(threads) schedule(static) if (numvec > 1 && threads > 1)
+  for(int i = 0; i < numvec; i++) {
+    out[i] = C_evalpolyh(x + i*rank, knots, w, lw, rank, ncols(Sknots), k);
+  }
+  UNPROTECT(1);
+  return res;
 }
 
 // an R-free evalongrid. Recursive
@@ -546,13 +676,13 @@ static double C_evalmlip(const int rank, double *x, double **grid, int *dims, do
 }
 
 /* Then a multilinear approximation */
-static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
+static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads, SEXP spare) {
   const int rank = LENGTH(sgrid);
   int gridsize = 1;
   int dims[rank];
   int threads = INTEGER(AS_INTEGER(Rthreads))[0];
   double *grid[rank];
-
+  UNUSED(spare);
   if(!IS_NUMERIC(values)) error("values must be numeric");
   if(!IS_NUMERIC(x)) error("argument x must be numeric");  
   if(isMatrix(x) ? (nrows(x) != rank) : (LENGTH(x) != rank))
@@ -576,9 +706,7 @@ static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
   SEXP resvec = PROTECT(NEW_NUMERIC(numvec));
 #endif
   double *out = REAL(resvec);
-#ifdef _OPENMP
-#pragma omp parallel for num_threads(threads) schedule(static)
-#endif
+#pragma omp parallel for num_threads(threads) schedule(static) if (numvec > 1 && threads > 1)
   for(int i = 0; i < numvec; i++) {
     out[i] = C_evalmlip(rank,xp+i*rank,grid,dims,REAL(values));
   }
@@ -586,14 +714,16 @@ static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
   return resvec;
 }
 
-static SEXP R_sqdiffs(SEXP x1, SEXP x2) {
+static SEXP R_sqdiffs(SEXP x1, SEXP x2, SEXP Sthreads) {
   // each column in x1 should be subtracted from each column in x2,
   // the squared column sums should be returned.
-  int r1 = nrows(x1), c1 = ncols(x1), r2 = nrows(x2), c2 = ncols(x2);
+  const int r1 = nrows(x1), c1 = ncols(x1), r2 = nrows(x2), c2 = ncols(x2);
   int N = c1*c2;
+  int threads = INTEGER(AS_INTEGER(Sthreads))[0];
   SEXP res = PROTECT(NEW_NUMERIC(N));
   double *dres = REAL(res);
   double *np = dres;
+#pragma omp parallel for num_threads(threads) schedule(static) if (c1 > 1)
   for(int i = 0; i < c1; i++) {
     double *x1p = REAL(x1) + i*r1;
     for(int j = 0; j < c2; j++) {
@@ -602,7 +732,7 @@ static SEXP R_sqdiffs(SEXP x1, SEXP x2) {
       for(int k = 0; k < r1; k++) {
 	csum += (x1p[k] - x2p[k])*(x1p[k] - x2p[k]);
       }
-      *np++ = csum;
+      np[j + i*c2] = csum;
     }
   }
   SEXP snewdim = PROTECT(NEW_INTEGER(2));
@@ -613,22 +743,156 @@ static SEXP R_sqdiffs(SEXP x1, SEXP x2) {
   return res;
 }
 
-static SEXP R_havefftw() {
-  SEXP res;
-  PROTECT(res = NEW_LOGICAL(1));
-#ifdef HAVE_FFTW
-  LOGICAL(res)[0] = TRUE;
-#else
-  LOGICAL(res)[0] = FALSE;
-#endif
-  UNPROTECT(1);
-  return res;
+static double findsimplex(double *x, double *knots, int *dtri, SEXP adata, int epol,
+			  double *val, const int dim, const int numsimplex, int nknots) {
+
+  SEXP lumats = VECTOR_ELT(adata,0);
+  SEXP ipivs = VECTOR_ELT(adata,1);
+  double *bbox = REAL(VECTOR_ELT(adata,2));
+  double vec[dim+1];
+  int N=dim+1, one=1, info;
+  for(int simplex = 0; simplex < numsimplex; simplex++) {
+    // x must be in the bounding box. Perhaps we should do binary search, or organize them hierarchically?
+    double *box = bbox + simplex*2*dim;
+    int bad = 0;
+    for(int i = 0; i < dim; i++) {
+      if(x[i] < box[0] || x[i] > box[1]) {bad = 1; break;}
+      box += 2;
+    }
+    if(bad) continue;
+
+    // bounding box matches. Transform to barycentric coordinates, check that they are positive.
+    double *lumat = REAL(VECTOR_ELT(lumats, simplex));
+    int *ipiv = INTEGER(VECTOR_ELT(ipivs, simplex));
+    for(int d = 0; d < dim; d++) vec[d] = x[d];
+    vec[dim] = 1.0;
+    F77_CALL(dgetrs)("N", &N, &one, lumat, &N, ipiv, vec, &N, &info);
+    for(int d = 0; d < N; d++) if(vec[d] < 0) {bad = 1; break;}
+    if(bad) continue;
+
+    // We found it
+    const int *tri = dtri + simplex * N;
+    double sum = 0;
+    for(int d = 0; d < N; d++) {
+      sum += vec[d]*val[tri[d]-1];
+    }
+    return sum;
+  }
+  
+  if(epol) {
+    // Find the closest knot
+    double mindist = 1e99;
+    int nearknot = 0;
+    for(int k = 0; k < nknots; k++) {
+      double dist = 0.0;
+      for(int i = 0; i < dim; i++) dist += (x[i] - knots[k*dim + i])*(x[i] - knots[k*dim + i]);
+      if(dist < mindist) {mindist = dist; nearknot = k;}
+    }
+    
+    // Now, find a simplex with this knot
+    int nearest = -1;
+    for(int simplex = 0; simplex < numsimplex; simplex++) {
+      for(int j = 0; j < N; j++) if(dtri[simplex*N + j] == nearknot+1) {nearest = simplex; break;}
+      if(nearest != -1) break;
+    }
+
+    if(nearest == -1) return NA_REAL;
+    double *lumat = REAL(VECTOR_ELT(lumats, nearest));
+    int *ipiv = INTEGER(VECTOR_ELT(ipivs, nearest));
+    const int *tri = dtri + nearest * (dim+1);
+    for(int d = 0; d < dim; d++) vec[d] = x[d];
+    vec[dim] = 1.0;
+    F77_CALL(dgetrs)("N", &N, &one, lumat, &N, ipiv, vec, &N, &info);
+    double sum = 0;
+    for(int d = 0; d <= dim; d++) sum += vec[d]*val[tri[d]-1];
+    return sum;
+  }
+  return NA_REAL;
 }
 
-// inplace to save memory
-static SEXP R_phifunc(SEXP Sx, SEXP Sk) {
+static SEXP R_evalsl(SEXP Sx, SEXP Sknots, SEXP Sdtri, SEXP adata, SEXP Sval,
+		     SEXP extrapolate, SEXP Sthreads, SEXP spare) {
+  UNUSED(spare); 
+  // Loop over the triangulation
+  int *dtri = INTEGER(Sdtri);
+  const int numsimplex = ncols(Sdtri);
+  double *x = REAL(Sx);
+  const int dim = nrows(Sknots);
+  const int numvec = ncols(Sx);
+  double *knots = REAL(Sknots);
+  double *val = REAL(Sval);
+  int threads = INTEGER(AS_INTEGER(Sthreads))[0];
+  SEXP ret = PROTECT(NEW_NUMERIC(ncols(Sx)));
+  double *resvec = REAL(ret);
+  int epol = LOGICAL(AS_LOGICAL(extrapolate))[0];
+#pragma omp parallel for num_threads(threads) schedule(guided) if(threads > 1 && numvec > 1)
+  for(int i = 0; i < numvec; i++) {
+    resvec[i] = findsimplex(x + i*dim, knots, dtri, adata, epol, val, dim, numsimplex, ncols(Sknots));
+  }
+  UNPROTECT(1);
+  return ret;
+}
+
+static SEXP R_analyzesimplex(SEXP Sdtri, SEXP Sknots, SEXP Sthreads) {
+  int threads = INTEGER(AS_INTEGER(Sthreads))[0];
+  int *dtri = INTEGER(Sdtri);
+  double *knots = REAL(Sknots);
+  const int dim = nrows(Sknots);
+  const int numsimplex = ncols(Sdtri);
+  int N = dim+1;
+  SEXP retlist = PROTECT(NEW_LIST(3));
+  // Allocate everything before parallel for
+  SET_VECTOR_ELT(retlist, 0, NEW_LIST(numsimplex));
+  SET_VECTOR_ELT(retlist, 1, NEW_LIST(numsimplex));
+  SET_VECTOR_ELT(retlist,2,allocMatrix(REALSXP, 2*dim, numsimplex));
+  SEXP lumats = VECTOR_ELT(retlist,0);
+  SEXP pivots = VECTOR_ELT(retlist,1);
+  double *bboxmat = REAL(VECTOR_ELT(retlist,2));
+  for(int i = 0; i < numsimplex; i++) {
+    SET_VECTOR_ELT(lumats,i,allocMatrix(REALSXP,N,N));
+    SET_VECTOR_ELT(pivots,i,NEW_INTEGER(N));
+    for(int j = 0; j <= dim; j++) INTEGER(VECTOR_ELT(pivots,i))[j] = j+1;
+  }
+
+#pragma omp parallel for num_threads(threads) schedule(static) if(threads > 1 && numsimplex > 1)
+  for(int simplex = 0; simplex < numsimplex; simplex++) {
+    int *tri = dtri + simplex*(dim+1);
+    double *lumat = REAL(VECTOR_ELT(lumats,simplex));
+    int *ipiv = INTEGER(VECTOR_ELT(pivots,simplex));
+    int info;
+    double *m = bboxmat + simplex*2*dim;
+    for(int j = 0; j < dim; j++) {m[2*j] = 1e100; m[2*j+1] = -1e100;}
+    // Copy all vertices into mat, with a final row of ones to LU-factorize
+    // Preparation for transforming into barycentric coordinates
+    for(int v = 0; v <= dim; v++) {
+      const double *knot = knots + (tri[v]-1)*dim;
+      for(int j = 0; j < dim; j++) {
+	lumat[v*(dim+1) + j] = knot[j];
+	if(knot[j] < m[2*j]) m[2*j] = knot[j];
+	if(knot[j] > m[2*j+1]) m[2*j+1] = knot[j];
+      }
+      lumat[v*(dim+1) + dim] = 1.0;
+    }
+    F77_CALL(dgetrf)(&N, &N, lumat, &N, ipiv, &info);
+  }
+
+  UNPROTECT(1);
+  return retlist;
+}
+
+static SEXP R_havefftw() {
+#ifdef HAVE_FFTW
+  return ScalarLogical(TRUE);
+#else
+  return ScalarLogical(FALSE);
+#endif
+}
+
+// inplace to save memory, do repated multiplication instead of pow(). It's faster.
+static SEXP R_phifunc(SEXP Sx, SEXP Sk, SEXP Sthreads) {
   double k = REAL(AS_NUMERIC(Sk))[0];
   double *x = REAL(Sx);
+  int threads = INTEGER(AS_INTEGER(Sthreads))[0];
   double *y;
   SEXP res;
   if(XLENGTH(Sx) == 1 && x[0] == 0.0) return ScalarReal((k<0)?1:0);
@@ -642,23 +906,23 @@ static SEXP R_phifunc(SEXP Sx, SEXP Sk) {
   }
 
   if(k < 0) {
+#pragma omp parallel for num_threads(threads) schedule(static) if(threads > 1)
     for(R_xlen_t i = 0; i < XLENGTH(Sx); i++) y[i] = exp(k*x[i]);
   } else {
     int ki = INTEGER(AS_INTEGER(Sk))[0];
     if(ki % 2 == 1) {
+#pragma omp parallel for num_threads(threads) schedule(static) if(threads > 1)
       for(R_xlen_t i = 0; i < XLENGTH(Sx); i++) {
 	// it's the sqrt(x) to ki'th power
-	double xx = sqrt(x[i]), xi=1;
-	for(R_xlen_t j = 0; j < ki; j++) xi *= xx;
-	y[i] = xi;
+	if(x[i] <= 0.0) {y[i]=0.0;continue;}
+	y[i] = R_pow_di(sqrt(x[i]), ki);
       }
     } else {
+#pragma omp parallel for num_threads(threads) schedule(static) if(threads > 1)
       for(R_xlen_t i = 0; i < XLENGTH(Sx); i++) {
 	// it's sqrt(x) to ki'th power, multiplied by 0.5 log(x)
 	if(x[i] <= 0.0) {y[i]=0.0;continue;}
-	double xx = sqrt(x[i]), xi=1;
-	for(R_xlen_t j = 0; j < ki; j++) xi *= xx;
-	y[i] = xi * 0.5 * log(x[i]);
+	y[i] = 0.5*log(x[i]) * R_pow_di(sqrt(x[i]),ki);
       }
     }
   }
@@ -667,17 +931,21 @@ static SEXP R_phifunc(SEXP Sx, SEXP Sk) {
 }
 
 R_CallMethodDef callMethods[] = {
-  {"evalcheb", (DL_FUNC) &R_evalcheb, 3},
-  {"chebcoef", (DL_FUNC) &R_chebcoef, 2},
-  {"FH", (DL_FUNC) &R_FH, 5},
-  {"evalmlip", (DL_FUNC) &R_evalmlip, 4},
+  {"evalcheb", (DL_FUNC) &R_evalcheb, 4},
+  {"chebcoef", (DL_FUNC) &R_chebcoef, 3},
+  {"FH", (DL_FUNC) &R_FH, 6},
+  {"FHweights", (DL_FUNC) &R_fhweights, 3},
+  {"evalmlip", (DL_FUNC) &R_evalmlip, 5},
   {"predmlip", (DL_FUNC) &R_mlippred, 2},
   {"evalongrid", (DL_FUNC) &R_evalongrid, 2},
   {"havefftw", (DL_FUNC) &R_havefftw, 0},
-  {"sqdiffs", (DL_FUNC) &R_sqdiffs, 2},
-  {"phifunc", (DL_FUNC) &R_phifunc, 2},
+  {"sqdiffs", (DL_FUNC) &R_sqdiffs, 3},
+  {"phifunc", (DL_FUNC) &R_phifunc, 3},
   {"makerbf", (DL_FUNC) &R_makerbf, 4},
   {"evalrbf", (DL_FUNC) &R_evalrbf, 3},
+  {"evalpolyh", (DL_FUNC) &R_evalpolyh, 7},
+  {"evalsl", (DL_FUNC) &R_evalsl, 8},
+  {"analyzesimplex", (DL_FUNC) &R_analyzesimplex, 3},
   {"havealglib", (DL_FUNC) &R_havealglib, 0},
   {NULL, NULL, 0}
 };
