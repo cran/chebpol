@@ -1,13 +1,3 @@
-#include <math.h>
-#include <Rmath.h>
-#include <R.h>
-#include <Rdefines.h>
-#include <R_ext/Rdynload.h>
-#include <R_ext/BLAS.h>
-#include <R_ext/Lapack.h>
-#include <R_ext/Applic.h>
-#include <R_ext/Visibility.h>
-#include "config.h"
 #include "chebpol.h"
 #define UNUSED(x) (void)(x)
 #ifdef HAVE_FFTW
@@ -263,11 +253,7 @@ static SEXP R_FH(SEXP inx, SEXP vals, SEXP grid, SEXP Sweights, SEXP Rthreads, S
   }
   double *xp = REAL(inx);
   const int numvec = isMatrix(inx) ? ncols(inx) : 1;
-#ifdef RETMAT
-  SEXP resvec = PROTECT(allocMatrix(REALSXP, numvec, 1));
-#else
   SEXP resvec = PROTECT(NEW_NUMERIC(numvec));
-#endif
   double *out = REAL(resvec);
 #pragma omp parallel for num_threads(threads) schedule(static) if (numvec > 1 && threads > 1)
   for(int i = 0; i < numvec; i++) {
@@ -275,6 +261,23 @@ static SEXP R_FH(SEXP inx, SEXP vals, SEXP grid, SEXP Sweights, SEXP Rthreads, S
   }
   UNPROTECT(1);
   return resvec;
+}
+
+R_INLINE static void fhweights(const int n, const double *grid, const int d, double *w, int threads) {
+#pragma omp parallel for schedule(static) num_threads(threads) if(threads > 1)
+  for(int k = 0; k <= n; k++) {
+    const int start = (k < d) ? 0 : k-d, end = (k < n-d) ? k : n-d;
+    double sum = 0.0;
+    for(int i = start; i <= end; i++) {
+      double prod = 1.0;
+      for(int j = i; j <= i+d; j++) {
+	if(j==k) continue;
+	prod *= grid[k]-grid[j];
+      }
+      sum += 1.0/fabs(prod);
+    }
+    w[k] = sum * ( ( k % 2 != d % 2) ? -1.0 : 1.0);
+  }
 }
 
 // Compute the weights for Floater-Hormann. Formula (18) of the FH-paper
@@ -298,27 +301,11 @@ static SEXP R_fhweights(SEXP Sgrid, SEXP Sd, SEXP Sthreads) {
 
   const int *dd = INTEGER(AS_INTEGER(Sd));
   int threads = INTEGER(AS_INTEGER(Sthreads))[0];
-
   for(int r = 0; r < rank; r++) {
-    const double *gr = grid[r];
-    double *w = wlist[r];
-    const int d = dd[r];
-    const int n = dims[r]-1;
-#pragma omp parallel for schedule(static) num_threads(threads) if(threads > 1)
-    for(int k = 0; k <= n; k++) {
-      const int start = (k < d) ? 0 : k-d, end = (k < n-d) ? k : n-d;
-      double sum = 0.0;
-      for(int i = start; i <= end; i++) {
-	double prod = 1.0;
-	for(int j = i; j <= i+d; j++) {
-	  if(j==k) continue;
-	  prod *= gr[k]-gr[j];
-	}
-	sum += 1.0/fabs(prod);
-      }
-      w[k] = sum * ( (abs(k-d) % 2 == 1) ? -1.0 : 1.0);
-    }
+    // The paper use index from 0 to n, i.e. n+1 knots in each dimension. Therefore dims[r]-1
+    fhweights(dims[r]-1, grid[r], dd[r], wlist[r],threads);
   }
+
   UNPROTECT(1);
   return ret;
 }
@@ -626,7 +613,8 @@ static SEXP R_mlippred(SEXP sgrid, SEXP values) {
   return resvec;
 }
 
-static double C_evalmlip(const int rank, double *x, double **grid, int *dims, double *values) {
+static double C_evalmlip(const int rank, double *x, double **grid, int *dims, 
+			 double *values) {
 
   double weight[rank];
   int valpos = 0;
@@ -654,6 +642,7 @@ static double C_evalmlip(const int rank, double *x, double **grid, int *dims, do
   }
 
   // loop over the corners of the box, sum values with weights
+
   for(int i = 0; i < (1<<rank); i++) {
     // i represents a corner. bit=1 if upper corner, 0 if lower corner.
     // We should find its weight
@@ -665,7 +654,7 @@ static double C_evalmlip(const int rank, double *x, double **grid, int *dims, do
       if( (1<<g) & i) {
 	cw *= weight[g];
       } else {
-	cw *= 1.0-weight[g];
+	cw *= 1-weight[g];
 	vpos -= stride;
       }
       stride *= dims[g];
@@ -676,13 +665,13 @@ static double C_evalmlip(const int rank, double *x, double **grid, int *dims, do
 }
 
 /* Then a multilinear approximation */
-static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads, SEXP spare) {
+static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
   const int rank = LENGTH(sgrid);
   int gridsize = 1;
   int dims[rank];
   int threads = INTEGER(AS_INTEGER(Rthreads))[0];
   double *grid[rank];
-  UNUSED(spare);
+
   if(!IS_NUMERIC(values)) error("values must be numeric");
   if(!IS_NUMERIC(x)) error("argument x must be numeric");  
   if(isMatrix(x) ? (nrows(x) != rank) : (LENGTH(x) != rank))
@@ -767,7 +756,7 @@ static double findsimplex(double *x, double *knots, int *dtri, SEXP adata, int e
     for(int d = 0; d < dim; d++) vec[d] = x[d];
     vec[dim] = 1.0;
     F77_CALL(dgetrs)("N", &N, &one, lumat, &N, ipiv, vec, &N, &info);
-    for(int d = 0; d < N; d++) if(vec[d] < 0) {bad = 1; break;}
+    for(int d = 0; d < N; d++) if(vec[d] < -1e-10) {bad = 1; break;}
     if(bad) continue;
 
     // We found it
@@ -935,7 +924,7 @@ R_CallMethodDef callMethods[] = {
   {"chebcoef", (DL_FUNC) &R_chebcoef, 3},
   {"FH", (DL_FUNC) &R_FH, 6},
   {"FHweights", (DL_FUNC) &R_fhweights, 3},
-  {"evalmlip", (DL_FUNC) &R_evalmlip, 5},
+  {"evalmlip", (DL_FUNC) &R_evalmlip, 4},
   {"predmlip", (DL_FUNC) &R_mlippred, 2},
   {"evalongrid", (DL_FUNC) &R_evalongrid, 2},
   {"havefftw", (DL_FUNC) &R_havefftw, 0},
@@ -945,8 +934,10 @@ R_CallMethodDef callMethods[] = {
   {"evalrbf", (DL_FUNC) &R_evalrbf, 3},
   {"evalpolyh", (DL_FUNC) &R_evalpolyh, 7},
   {"evalsl", (DL_FUNC) &R_evalsl, 8},
+  {"evalstalker", (DL_FUNC) &R_evalstalker, 5},
   {"analyzesimplex", (DL_FUNC) &R_analyzesimplex, 3},
   {"havealglib", (DL_FUNC) &R_havealglib, 0},
+  {"havegsl", (DL_FUNC) &havegsl, 0},  
   {NULL, NULL, 0}
 };
 

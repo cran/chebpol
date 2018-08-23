@@ -5,21 +5,21 @@
 \alias{chebappxgf}
 \title{Interpolation on a non-Chebyshev grid}
 \usage{
-chebappxg(val, grid = NULL, mapdim = NULL)
+chebappxg(...)
 
-chebappxgf(fun, grid, ..., mapdim = NULL)
+chebappxgf(...)
 }
 \arguments{
+\item{...}{Further arguments to \code{fun}.}
+
 \item{val}{Array. Function values on a grid.}
 
 \item{grid}{A list. Each element is a sorted vector of grid-points for a
 dimension. These need not be Chebyshev-knots, nor evenly spaced.}
 
-\item{mapdim}{Deprecated.}
-
 \item{fun}{The function to be approximated.}
 
-\item{...}{Further arguments to \code{fun}.}
+\item{mapdim}{Deprecated.}
 }
 \value{
 A \code{function(x)} defined on the hypercube, approximating the
@@ -36,7 +36,7 @@ A call \code{fun <- chebappxg(val,grid)} does the following.  A Chebyshev
 interpolation \code{ch} for \code{val} is created, on the [-1,1] hypercube.
 For each dimension a grid-map function \code{gm} is created which maps the
 grid-points monotonically into Chebyshev knots. For this, the function
-\code{\link{splinefun}} with \code{method='monoH.FC'} is used.  When
+\code{\link{splinefun}} with \code{method='hyman'} is used.  When
 \code{fun(x)} is called, it translates to \code{ch(gm(x))}.  For uniform
 grids, the function \code{\link{ucappx}} will produce a faster interpolation
 in that a closed form \code{gm} is used.
@@ -49,7 +49,7 @@ grid in each dimension should probably not be too irregularly spaced. I.e.
 short and long gaps interspersed is likely to cause problems.
 }
 \examples{
-
+\dontrun{
 ## evenly spaced grid-points
 su <- seq(0,1,length.out=10)
 ## irregularly spaced grid-points
@@ -82,6 +82,7 @@ ch <- Vectorize(chebappxf(f,15))
         legend=c('Runge function','chebappxg on uniform grid','Chebyshev'),
         col=c('black','blue','red'), lty=1)
 }
-
+}
 
 }
+\keyword{internal}

@@ -30,7 +30,7 @@
 #' @return A \code{function(x)} defined on the multidimensional space,
 #' approximating the given function.
 #' @examples
-#' 
+#' \dontrun{
 #' # a function on a 20-dimensional space
 #' r <- runif(20)
 #' r <- r/sum(r)
@@ -41,9 +41,11 @@
 #' # test it in a random point
 #' s <- runif(20)
 #' c(true=f(s), phs(s))
-#' 
+#' }
 #' @export
-polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
+#' @keywords internal
+polyh <- function(...) deprecated('polyh',...)
+polyh.real <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
 # Linear polyharmonic splines. Centres are columns in matrix knots. Function values in val.
 # Quite slow for ncol(knots) > 3000 or so.  k=2 yields thin-plate splines.
 # There exist faster evaluation methods for dimensions <= 4
@@ -84,9 +86,9 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
   }
 
   # trickery to get it in place
-  phi <- cmpfun(function(x) {
+  phi <- function(x) {
     eval.parent(as.call(list(quote(.Call), C_phifunc, substitute(x), k, getOption('chebpol.threads'))))
-  })
+  }
 
   #A <- phi(apply(knots,2, function(ck) colSums((ck-knots)^2)))
   # one day I will look into a faster solver, 
@@ -113,17 +115,15 @@ polyh <- function(val, knots, k=2, normalize=NA, nowarn=FALSE, ...) {
       if(!nowarn)
         warning('Failed to fit exactly, fallback to least squares fit.',
                 if(!normalize) ' You could try normalize=TRUE.' else '')
-      wv <- lm.fit(mat,rhs)$coefficients
+      wv <- stats::lm.fit(mat,rhs)$coefficients
       wv[is.na(wv)] <- 0
     }
     w <- wv[1:N]
     v <- wv[(N+1):length(wv)]
-    rm(mat,rhs)
+    rm(mat,rhs,wv)
   }
   rm(A,B)
-  x <- threads <- NULL; rm(x,threads)
-  local(vectorfun(.Call(C_evalpolyh, normfun(x), knots, w, v, k, threads, NULL),
-            args=alist(x=, threads=getOption('chebpol.threads')),
-            arity=M,domain=data.frame(apply(knots,1,range))),
-        list(knots=knots,w=w,v=v,k=k,normfun=normfun))
+  vectorfun(function(x,threads=getOption('chebpol.threads')) .Call(C_evalpolyh, normfun(x), knots, w, v, k, threads, NULL),
+            arity=M,
+            domain=data.frame(apply(knots,1,range)))
 }

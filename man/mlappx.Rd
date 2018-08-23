@@ -5,17 +5,17 @@
 \alias{mlappxf}
 \title{Multilinear interpolation on a grid}
 \usage{
-mlappx(val, grid, ...)
+mlappx(...)
 }
 \arguments{
+\item{...}{Further arguments to the function, if \code{is.function(val)}.}
+
 \item{val}{Array or function. Function values on a grid, or the function
 itself. If it is the values, the \code{dim}-attribute must be appropriately
 set.}
 
 \item{grid}{A list.  Each element is a vector of ordered grid-points for a
 dimension.  These need not be Chebyshev-knots, nor evenly spaced.}
-
-\item{...}{Further arguments to the function, if \code{is.function(val)}.}
 }
 \value{
 A \code{function(x)} defined on the hypercube, approximating the
@@ -26,7 +26,7 @@ hypercube as well, as a linear extension.
 Multilinear interpolation on an arbitrary Cartesian product.
 }
 \details{
-A call \code{fun <- mlappx(val,grid)} creates a multilinear interpolation on
+A call \code{fun <- mlappx(val,grid)} creates a multilinear interpolant on
 the grid.  The value on the grid points will be exact, the value between the
 grid points is a convex combination of the values in the corners of the
 hypercube surrounding it.
@@ -34,6 +34,7 @@ hypercube surrounding it.
 If \code{val} is a function it will be evaluated on the grid.
 }
 \examples{
+\dontrun{
 
 ## evenly spaced grid-points
 su <- seq(0,1,length.out=10)
@@ -55,5 +56,6 @@ ml2 <- mlappx(evalongrid(f,grid=grid),grid)
 a <- runif(2); ml2(a); f(a)
 # we also get an approximation outside of the domain, of disputable quality
 ml2(c(1,2)); f(c(1,2))
-
 }
+}
+\keyword{internal}

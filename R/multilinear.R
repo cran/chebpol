@@ -2,10 +2,10 @@
 #' 
 #' Multilinear interpolation on an arbitrary Cartesian product.
 #' 
-#' A call \code{fun <- mlappx(val,grid)} creates a multilinear interpolation on
+#' A call \code{fun <- mlappx(val,grid)} creates a multilinear interpolant on
 #' the grid.  The value on the grid points will be exact, the value between the
 #' grid points is a convex combination of the values in the corners of the
-#' hypercube surrounding it.
+#' hypercube surrounding it. 
 #' 
 #' If \code{val} is a function it will be evaluated on the grid.
 #' 
@@ -20,6 +20,7 @@
 #' given function.  The function yields values for arguments outside the
 #' hypercube as well, as a linear extension.
 #' @examples
+#' \dontrun{
 #' 
 #' ## evenly spaced grid-points
 #' su <- seq(0,1,length.out=10)
@@ -41,10 +42,11 @@
 #' a <- runif(2); ml2(a); f(a)
 #' # we also get an approximation outside of the domain, of disputable quality
 #' ml2(c(1,2)); f(c(1,2))
-#' 
+#' }
 #' @export
-mlappx <- function(val, grid, ...) {
-  x <- threads <- NULL; rm(x,threads) # avoid cran check warning 
+#' @keywords internal
+mlappx <- function(...) deprecated('mlappx',...)
+mlappx.real <- function(val, grid, ...) {
   if(is.numeric(grid)) grid <- list(grid)
   if(any(sapply(grid,is.unsorted))) {
     if(!is.function(val)) stop('Grid points must be ordered in increasing order')
@@ -58,8 +60,7 @@ mlappx <- function(val, grid, ...) {
 #  if(adjust!=0) {
 #    val <- val + (val - .Call(C_predmlip,grid,as.numeric(val)))*adjust
 #  }
-  local(vectorfun(.Call(C_evalmlip,grid,val,x,threads,NULL), length(grid), 
-                  args=alist(x=,threads=getOption('chebpol.threads')),
-                  domain=lapply(grid,range)),
-        list(grid=grid,val=val))
+  vectorfun(function(x,threads=getOption('chebpol.threads')) .Call(C_evalmlip,grid,val,x,threads),
+            arity=length(grid), 
+            domain=lapply(grid,range))
 }

@@ -28,7 +28,8 @@
 #' given function.  The interpolant function uses the barycentric
 #' Floater-Hormann interpolation.
 #' @examples
-#' 
+#' \dontrun{
+#'  
 #' ## evenly spaced grid-points
 #' su <- seq(0,1,length.out=10)
 #' ## irregularly spaced grid-points
@@ -46,22 +47,24 @@
 #' # an equivalent would be fh2 <- fhappx(f,grid)
 #' 
 #' a <- runif(2); fh2(a); f(a)
-#' 
+#' }
 #' @export
-fhappx <- function(val,grid=NULL, d=1, ...) {
-  x <- threads <- NULL; rm(x,threads) # avoid warning about undefined vars
+#' @keywords internal
+fhappx <- function(...) deprecated('fhappx',...)
+
+fhappx.real <- function(val,grid=NULL, d=1, ...) {
   if(is.null(grid)) 
     stop('Must specify grid')
   if(!is.list(grid)) grid <- list(grid)
   grid <- lapply(grid,as.numeric)
   if(is.function(val)) val <- evalongrid(val, grid=grid, ...)
+  if(!is.array(val)) dim(val) <- sapply(grid,length)
   dd <- as.integer(d)
   dd <- rep(dd, length(grid) %/% length(d))
   # calculate weights, formula 18 in Floater & Hormann, in C, parallelized
   weights <- .Call(C_FHweights, grid, dd, getOption('chebpol.threads'))
-  local(vectorfun(.Call(C_FH,x,val,grid,weights,threads,NULL), 
-                  args=alist(x=,threads=getOption('chebpol.threads')),
+  rm(dd,d)
+  vectorfun(function(x,threads=getOption('chebpol.threads')) .Call(C_FH,x,val,grid,weights,threads,NULL), 
                   arity=length(grid),
-                  domain=lapply(grid,range)),
-        list(val=val,grid=grid,weights=weights))
+                  domain=lapply(grid,range))
 }

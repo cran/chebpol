@@ -1,6 +1,6 @@
 #' Evaluate an interpolant in a point
 #'
-#' An interpolant is a function which has prespecified values in some
+#' An interpolant is a function returned by \code{\link{ipol}} which has prespecified values in some
 #' points, and which fills in between with some reasonable values.
 #'
 #' @name interpolant
@@ -11,6 +11,10 @@
 #' be evaluated in parallel.
 #' @param ... Other parameters. Currently used for simplex linear interpolants with the logical argument
 #' \code{epol} which makes the interpolant extrapolate to points outside the domain.
+#' The stalker spline has two such arguments: \code{degree} is the degree if
+#' different from the one at creation time. It can be a vector, one degree for each dimension.
+#' \code{blend=c("linear","cubic","sigmoid")} is
+#' a blending function as described in a vignette.
 #' @return A numeric. If more than one point was evaluated, a vector.
 #' @examples
 #' grid <- list(x=seq(0,1,length.out=10), y=seq(0,1,length.out=10))

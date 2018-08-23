@@ -41,6 +41,7 @@ ugm <- function(x,n) sin(0.5*pi*x*(1-n)/n)
 #' given function.
 #' @examples
 #' 
+#' \dontrun{
 #' # Runge function
 #' f <- function(x) 1/(1+25*x^2)
 #' grid <- seq(-1,1,length.out=15)
@@ -50,28 +51,29 @@ ugm <- function(x,n) sin(0.5*pi*x*(1-n)/n)
 #' ch <- Vectorize(chebappxf(f,15))
 #' # test it at 10 random points
 #' t(replicate(10,{a<-runif(1,-1,1); c(arg=a, uc=uc(a), true=f(a), cheb=ch(a))}))
-#' 
+#' }
 #' @export
-ucappx <- function(val, intervals=NULL) {
-  x <- threads <- NULL; rm(x,threads) # avoid cran check warning 
+#' @keywords internal
+ucappx <- function(...) deprecated('ucappx',...)
+ucappx.real <- function(val, intervals=NULL) {
   if(is.null(dim(val))) dim(val) <- length(val)
   dims <- dim(val)
-  ch <- chebappx(val)
+  ch <- chebappx.real(val)
   if(is.null(intervals)) {
-    gridmap <- cmpfun(function(x) mapply(function(xi,d) ugm(xi,d),x,dims))
+    gridmap <- function(x) mapply(function(xi,d) ugm(xi,d),x,dims)
   } else {
     # precompute interval mid points and inverse lengths
     md <- lapply(intervals,mean)
     ispan <- lapply(intervals, function(i) 2/diff(i))
-    gridmap <- cmpfun(function(x) mapply(function(xi,mid,is,d) ugm(is*(xi-mid),d),x,md,ispan,dims))
+    gridmap <- function(x) mapply(function(xi,mid,is,d) ugm(is*(xi-mid),d),x,md,ispan,dims)
   }
-  gm <- cmpfun(function(x) {
+  gm <- function(x) {
     if(is.matrix(x)) apply(x,2,gridmap) else gridmap(x)
-  })
-  local(vectorfun(ch(gm(x), threads), length(dims), 
-                  args=alist(x=,threads=getOption('chebpol.threads')),
-                  domain=if(is.null(intervals)) lapply(rep(-1,length(dim(val))),c,1) else intervals),
-        list(gm=gm,ch=ch))
+  }
+  vectorfun(function(x, threads=getOption('chebpol.threads')) ch(gm(x), threads), 
+            arity=length(dims), 
+            domain=if(is.null(intervals)) lapply(rep(-1,length(dim(val))),c,1) else intervals)
+
 }
 
 #' @rdname ucappx
@@ -79,12 +81,14 @@ ucappx <- function(val, intervals=NULL) {
 #' @param dims Integer. Number of grid points in each dimension.
 #' @param ... Further arguments to \code{fun}.
 #' @export
-ucappxf <- function(fun, dims, intervals=NULL,...) {
+#' @keywords internal
+ucappxf <- function(...) deprecated('ucappxf',...)
+ucappxf.real <- function(fun, dims, intervals=NULL,...) {
   if(is.null(intervals))
-    return(ucappx(evalongrid(fun,...,grid=lapply(dims,function(d) seq(-1,1,length.out=d)))))
+    return(ucappx.real(evalongrid(fun,...,grid=lapply(dims,function(d) seq(-1,1,length.out=d)))))
   if(is.numeric(intervals) && length(intervals) == 2) intervals <- list(intervals)
   return(
-    ucappx(evalongrid(fun,...,
+    ucappx.real(evalongrid(fun,...,
                       grid=mapply(function(d,i) seq(min(i),max(i),length.out=d),
                                   dims, intervals,SIMPLIFY=FALSE)),
            intervals))

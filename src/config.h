@@ -3,4 +3,5 @@
 // win taken care of by compiler flags
 #define HAVE_FFTW 1
 #define HAVE_ALGLIB 1
+#define HAVE_GSL 1
 #endif

@@ -39,7 +39,7 @@ a Chebyshev interpolation. The classical one is available with
 
 There are several options if your function must be evaluated in a uniform grid.
 There is the Floater-Hormann rational interpolation available with \code{\link{ipol}(...,method='fh')}.
-There is a a transformed Chebyshev variant \code{\link{ipol}(..., method='uniform')}.
+There is a transformed Chebyshev variant \code{\link{ipol}(..., method='uniform')}.
 }
 
 \section{Arbitrary grids}{
@@ -89,9 +89,7 @@ rbind(true=apply(m,2,f), cheb=ch(m), fh=fh(m))
 \seealso{
 \link{ipol}, \link{interpolant}
 }
-\concept{
-DCT Floater-Hormann
-}
+\concept{DCT Floater-Hormann}
 \keyword{Chebyshev}
 \keyword{DCT}
 \keyword{Floater-Hormann}

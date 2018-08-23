@@ -41,14 +41,14 @@ set.seed(46)
 f1 <- function(x) 1.5/log(5+sin(pi/2*(x[1]^2-2*x[2]^2)))
 ch1 <- ipol(f1, dims=c(9,9), method='cheb')
 igrid <- list(x=seq(-1,1,len=9), y=seq(-1,1,len=9))
-ml1 <- ipol(f1, grid=igrid, method='multilinear')
+st1 <- ipol(f1, grid=igrid, method='stalker')
 fh1 <- ipol(f1, grid=igrid, method='fh', k=3)
 y <- x <- seq(-1,1,len=200)
 testset <- expand.grid(list(x=x,y=y))
 data <- cbind(testset,fun= apply(testset,1,f1), cheb=ch1(t(testset)), 
-              m.lin=ml1(t(testset)), F.H.=fh1(t(testset)))
+              stalker=st1(t(testset)), F.H.=fh1(t(testset)))
 
-lattice::levelplot(m.lin+F.H.+fun+cheb ~ x+y, data=data, cuts=10,
+lattice::levelplot(stalker+F.H.+fun+cheb ~ x+y, data=data, cuts=10,
           col.regions=grey.colors(11,0.1,0.9), layout=c(2,2), 
           main='Level plots of function and interpolations')
 
@@ -56,8 +56,8 @@ lattice::levelplot(m.lin+F.H.+fun+cheb ~ x+y, data=data, cuts=10,
 set.seed(43)
 
 ## ----fig.align='center', fig.width=7, fig.height=7-----------------------
-f2 <- function(x) 1.2/min(log(3.1 + sin(0.7+1.8*pi*(x+0.39*x[1]^2-x[2]^2))^2))
-ph1 <- ipol(f1, knots=matrix(runif(100,-1,1),2), method='polyharmonic', k=3)
+f2 <- function(x) 1.2/mean(log(3.1 + sin(0.7+1.8*pi*(x+0.39*x[1]^2-x[2]^2))^2))
+ph1 <- ipol(f1, knots=matrix(runif(200,-1,1),2), method='polyharmonic', k=2)
 ph2 <- ipol(f2, knots=matrix(runif(4000,-1,1),2), method='polyharmonic', k=3)
 data <- cbind(testset,fun1= apply(testset,1,f1), poly1=ph1(t(testset)), 
               fun2=apply(testset,1,f2), poly2=ph2(t(testset)))
@@ -68,6 +68,24 @@ lattice::levelplot(fun2+poly2+fun1+poly1 ~ x+y, data=data, cuts=10,
 # compute L2-error (rmse)
 sqrt(cubature::hcubature(function(x) as.matrix((ph2(x)-apply(x,2,f2))^2), rep(-1,2), rep(1,2),
           vectorInterface=TRUE, absError=1e-6)$integral/4)
+
+## ----volcano, fig.align='center', fig.pos='!ht', fig.cap='Volcanoes', out.width='.37\\linewidth', fig.ncol=2, fig.subcap=c('low resolution','polyharmonic','Floater-Hormann','simplex')----
+data(volcano)
+volc <- volcano[seq(1,nrow(volcano),3),seq(1,ncol(volcano),3)]/10 #low res volcano
+grid <- list(x=as.numeric(seq_len(nrow(volc))), y=as.numeric(seq_len(ncol(volc))))
+fh <- ipol(volc, grid=grid, method='fh', k=0)
+knots <- t(expand.grid(grid))
+sl <- ipol(volc, knots=knots, method='simplex')
+ph <- ipol(volc, knots=knots, method='poly')
+g <- list(x=seq(1,nrow(volc), len=100), y=seq(1,ncol(volc),len=100))
+par(mar=rep(0,4)); col <- 'green'
+light <- list(specular=0.2,ambient=0.0,diffuse=0.6)
+plot3D::persp3D(grid$x, grid$y, volc, colvar=NULL, lighting=light,
+        theta=135, ltheta=90, lphi=40, col=col, axes=FALSE, bty='n',scale=FALSE)
+for(f in list(ph, fh, sl)) {
+plot3D::persp3D(g$x, g$y, evalongridV(f,grid=g), colvar=NULL, lighting=light,
+        theta=135, ltheta=90, lphi=40, col=col, axes=FALSE, bty='n', scale=FALSE)
+}
 
 ## ----para----------------------------------------------------------------
 m <- matrix(runif(2*6,-1,1),2)

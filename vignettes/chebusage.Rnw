@@ -1,5 +1,7 @@
 \documentclass[a4paper]{amsart}
 \usepackage{graphicx}
+\usepackage{subfig}
+\usepackage{hyperref}
 \newcommand{\strong}[1]{{\normalfont\fontseries{b}\selectfont #1}}
 \let\pkg=\strong
 \newcommand\code{\bgroup\@codex}
@@ -10,7 +12,7 @@
 \newcommand{\figsize}{7cm}
 %\VignetteIndexEntry{Usage notes for package chebpol}
 %\VignetteEngine{knitr::knitr}
-%\VignetteDepends{cubature, lattice}
+%\VignetteDepends{cubature, lattice, plot3D}
 \setlength{\textwidth}{\paperwidth}
 \setlength{\textheight}{\paperheight}
 \addtolength{\textwidth}{-3cm}
@@ -144,9 +146,11 @@ Cartesian grid into a Chebyshev grid by means of a monotonic spline in
 each dimension.  The multilinear and Floater-Hormann methods also
 work on arbitrary Cartesian grids.
 
-To illustrate how this works, here is a quite nice function on \([-1,1]^2\) and level plots
-of it and the \(9 \times 9\) Chebyshev interpolation, and the multilinear and Floater-Hormann methods on
-a uniform \(9 \times 9\) grid.
+To illustrate how this works, here is a quite nice function on
+\([-1,1]^2\) and level plots of it and the \(9 \times 9\) Chebyshev
+interpolation, a homegrown ``stalker'' spline (described in a
+vignette) and the Floater-Hormann methods on a uniform \(9 \times 9\)
+grid.
 
 <<echo=FALSE>>=
 set.seed(46)
@@ -155,40 +159,41 @@ set.seed(46)
 f1 <- function(x) 1.5/log(5+sin(pi/2*(x[1]^2-2*x[2]^2)))
 ch1 <- ipol(f1, dims=c(9,9), method='cheb')
 igrid <- list(x=seq(-1,1,len=9), y=seq(-1,1,len=9))
-ml1 <- ipol(f1, grid=igrid, method='multilinear')
+st1 <- ipol(f1, grid=igrid, method='stalker')
 fh1 <- ipol(f1, grid=igrid, method='fh', k=3)
 y <- x <- seq(-1,1,len=200)
 testset <- expand.grid(list(x=x,y=y))
 data <- cbind(testset,fun= apply(testset,1,f1), cheb=ch1(t(testset)), 
-              m.lin=ml1(t(testset)), F.H.=fh1(t(testset)))
+              stalker=st1(t(testset)), F.H.=fh1(t(testset)))
 
-lattice::levelplot(m.lin+F.H.+fun+cheb ~ x+y, data=data, cuts=10,
+lattice::levelplot(stalker+F.H.+fun+cheb ~ x+y, data=data, cuts=10,
           col.regions=grey.colors(11,0.1,0.9), layout=c(2,2), 
           main='Level plots of function and interpolations')
 @ 
 
-It is not so easy to see in a picture, but the multilinear interpolant is not differentiable
-in the grid points, it is piecewise linear. The other interpolants are typically twice continuously
-differentiable.
+It is not so easy to see in this picture, but the stalker interpolant
+is not generally twice differentiable in the grid points. The other
+interpolants are typically twice continuously differentiable.
 
-There is one interpolation method we have not mentioned yet. If the
+There are two interpolation methods we have not mentioned yet. If the
 data are scattered in two or more dimensions, none of the methods
 above will work. They need a Cartesian product grid. The \pkg{chebpol}
-package contains one method for scattered data also, the polyharmonic
-spline (see \cite{HL12}). It is parametric with an integer
-\(k\in\NN\). For free we also throw in a Gaussian radial basis
-function interpolation for negative \(k \in \RN^-\).
-Here we create two functions and plot level plots of them and their polyharmonic
-interpolations. One of the functions is quite smooth, the other is quite wobbly and
-requires a lot of scattered points.
+package contains two methods for scattered data also, the most
+versatile being the polyharmonic spline (see \cite{HL12}). It is
+parametric with an integer \(k\in\NN\). For free we also throw in a
+Gaussian radial basis function interpolation for negative \(k \in
+\RN^-\).  Here we create two functions and plot level plots of them
+and their polyharmonic interpolations. One of the functions is quite
+smooth, the other is quite wobbly and requires a lot of scattered
+points.
 
 <<poly,echo=FALSE>>=
 set.seed(43)
 @ 
 
 <<fig.align='center', fig.width=7, fig.height=7>>=
-f2 <- function(x) 1.2/min(log(3.1 + sin(0.7+1.8*pi*(x+0.39*x[1]^2-x[2]^2))^2))
-ph1 <- ipol(f1, knots=matrix(runif(100,-1,1),2), method='polyharmonic', k=3)
+f2 <- function(x) 1.2/mean(log(3.1 + sin(0.7+1.8*pi*(x+0.39*x[1]^2-x[2]^2))^2))
+ph1 <- ipol(f1, knots=matrix(runif(200,-1,1),2), method='polyharmonic', k=2)
 ph2 <- ipol(f2, knots=matrix(runif(4000,-1,1),2), method='polyharmonic', k=3)
 data <- cbind(testset,fun1= apply(testset,1,f1), poly1=ph1(t(testset)), 
               fun2=apply(testset,1,f2), poly2=ph2(t(testset)))
@@ -204,6 +209,64 @@ sqrt(cubature::hcubature(function(x) as.matrix((ph2(x)-apply(x,2,f2))^2), rep(-1
 The polyharmonic spline method is quite slow. It requires solving a \(K \times K\) dense
 linear system, where \(K\) is the number of knots. It helps a lot to use a tuned and 
 parallel BLAS with R, such as Intel's MKL.
+
+In Figure \ref{fig:volcano} are various interpolated 3d-pictures of the Maungawhau volcano
+(Mt.\ Eden, Auckland, New Zealand). We illustrate the other method which works on scattered data,
+it is piecewise linear on triangles (more generally on simplices).
+
+<<volcano, fig.align='center', fig.pos='!ht', fig.cap='Volcanoes', out.width='.37\\linewidth', fig.ncol=2, fig.subcap=c('low resolution','polyharmonic','Floater-Hormann','simplex')>>=
+data(volcano)
+volc <- volcano[seq(1,nrow(volcano),3),seq(1,ncol(volcano),3)]/10 #low res volcano
+grid <- list(x=as.numeric(seq_len(nrow(volc))), y=as.numeric(seq_len(ncol(volc))))
+fh <- ipol(volc, grid=grid, method='fh', k=0)
+knots <- t(expand.grid(grid))
+sl <- ipol(volc, knots=knots, method='simplex')
+ph <- ipol(volc, knots=knots, method='poly')
+g <- list(x=seq(1,nrow(volc), len=100), y=seq(1,ncol(volc),len=100))
+par(mar=rep(0,4)); col <- 'green'
+light <- list(specular=0.2,ambient=0.0,diffuse=0.6)
+plot3D::persp3D(grid$x, grid$y, volc, colvar=NULL, lighting=light,
+        theta=135, ltheta=90, lphi=40, col=col, axes=FALSE, bty='n',scale=FALSE)
+for(f in list(ph, fh, sl)) {
+plot3D::persp3D(g$x, g$y, evalongridV(f,grid=g), colvar=NULL, lighting=light,
+        theta=135, ltheta=90, lphi=40, col=col, axes=FALSE, bty='n', scale=FALSE)
+}
+@ 
+
+\section{Radial basis functions with compact support (ALGLIB)}
+  The ALGLIB library (\url{http://www.alglib.net/interpolation/fastrbf.php}) contains an implementation
+of compact support radial basis function interpolation on scattered data. It is available with
+\code{ipol(..., method='crbf')} if ALGLIB was available at build time. 
+
+By default, this is not true for Windows. However if ALGLIB is available,
+\pkg{chebpol} can be built with it from source by editing the file
+\code{src/Makevars.win}. The library must be put into the make variable
+\code{PKG\_LIBS} as something like \code{-LC:/somewhere/libs -lalglib},
+and the compiler must be told where to find ALGLIB's include file by
+inserting something like \code{-IC:/somewhere/include -DHAVE\_ALGLIB}
+in the \code{PKG\_CPPFLAGS}.
+
+On linux and other unix-variants, ALGLIB should be put into the
+\code{pkg-config} database so that the command \code{pkg-config --libs
+  alglib} reports the link and compiler flags. This amounts
+to creating a file \code{alglib.pc} in the search path of \code{pkg-config} with the
+necessary content (\code{Libs:} and \code{Cflags:})
+The author has put ALGLIB in \code{/usr/local}, and \code{alglib.pc} contains:
+
+\begin{verbatim}
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include/alglib
+
+Name: ALGLIB
+Description: Various numerical mathematics
+Version: 3.14.0
+Libs: -L${libdir} -lalglib
+Cflags: -I${includedir}
+\end{verbatim}
+
+When this works, \pkg{chebpol} will be built with ALGLIB when you do an \code{install.packages('chebpol')}.
 
 \section{Speed considerations}
 There are two parts to interpolation. Creating the interpolant, and
@@ -222,7 +285,7 @@ interpolants. \pkg{chebpol} uses the FFT from the software package
 FFTW, if it was available during compilation.  Otherwise a slower
 matrix method is used. Creation with FFT typically takes of the order
 \(O(n^r\log n)\). The evaluation of Chebyshev interpolants is not
-particularly fast, \pkg{chebpol} uses the Clenshaw-Curtis algorithm,
+particularly fast, \pkg{chebpol} uses the Clenshaw algorithm,
 which is a variant of Horner's method for evaluating polynomials. It typically
 goes in time \(n\) for each dimension, but they must be combined,
 so \(O(n^r)\).
@@ -241,6 +304,27 @@ The polyharmonic spline method is the most demanding. Creation requires calculat
 weights which amounts to solving a dense
 \(K\times K\) linear system, a \(O(K^3)\) task (or \(O(n^{3r})\) to compare with the grid methods).
 Evaluation is faster, of the order \(O(Kr)\) (or \(O(rn^r)\)).
+
+Creation of the simplex linear interpolation requires calculation of
+the Delaunay triangulation of the knots. This is usually quite fast,
+using the \code{qhull} library (\url{http://www.qhull.org}) available through package
+\pkg{geometry}.  Evaluation requires finding the enclosing simplex of
+the point, this is done linearly by filtering out bounding boxes which
+does not include the point, this is quite fast, and then for the
+remaining simplices, by verifying that the barycentric coordinates of
+the point are in \([0,1]\). It works reasonably fast for a few thousand knots
+and dimension below 4-5. With more knots, or higher dimensions, both creation and
+evaluation is markedly slower due to exceedingly high numbers of simplices.
+
+The compact radial basis functions approach of ALGLIB in \code{method='crbf'} \emph{requires}
+tuning. The three parameters in \code{k} is the base radius, the number of layers and
+a smoothing parameter \(\lambda\). The ALGLIB docs says that the base radius should be
+larger than the typical Euclidean distance between the knots. Each layer halves
+the radius, and the final radius should be smaller than the minimal distance, to capture the 
+most rapid changes. The smoothing parameter \(\lambda\) defaults to \(0\), but typical
+values can be around \(10^{-6}\) or \(10^{-5}\).  The default in \code{ipol} is \((2, 5, 0)\),
+but this may be a very bad choice for your data.  A commercial variant of ALGLIB is available,
+with parallelization and instruction-level optimizations, the author has not tried it.
 
 To alleviate speed problems, parts of \pkg{chebpol} has been parallelized with OpenMP.
 The number of threads is taken from \code{getOption("chebpol.threads")} which is initialized

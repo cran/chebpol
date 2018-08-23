@@ -49,8 +49,6 @@ chebknots <- function(dims, intervals=NULL) {
 
   res
 }
-# Chebyshev coefficients for x, which may be an array
-
 
 #' Compute Chebyshev-coefficients given values on a Chebyshev grid
 #' 
@@ -105,7 +103,7 @@ chebcoef <- function(val, dct=FALSE) {
 #' # make a function which is known to be unsuitable for Chebyshev approximation
 #' f <- function(x) sign(x)
 #' # make a standard Chebyshev interpolation
-#' ch <- Vectorize(chebappxf(f,50))
+#' ch <- ipol(f,dims=50,method='chebyshev')
 #' # then do a truncated interpolation
 #' val <- evalongrid(f,50)
 #' coef <- chebcoef(val)
@@ -114,7 +112,7 @@ chebcoef <- function(val, dct=FALSE) {
 #' # make a truncated approximation
 #' tch <- Vectorize(function(x) chebeval(x,coef))
 #' # make a lower degree also
-#' ch2 <- Vectorize(chebappxf(f,10))
+#' ch2 <- ipol(f,dims=10,method='chebyshev')
 #' # plot the functions
 #' \dontrun{
 #' s <- seq(-1,1,length.out=400)
@@ -161,6 +159,7 @@ chebeval <- function(x,coef,intervals=NULL,threads=getOption('chebpol.threads'))
 #' @return A function defined on the hypercube. A Chebyshev approximation to
 #' the function \code{fun}, or the values provided in \code{val}.
 #' @examples
+#' \dontrun{
 #' 
 #' f <- function(x) exp(-sum(x^2))
 #' ## we want 3 dimensions, i.e. something like
@@ -195,9 +194,11 @@ chebeval <- function(x,coef,intervals=NULL,threads=getOption('chebpol.threads'))
 #' f <- function(y) uniroot(function(x) y - x*exp(x), lower=-1,upper=3)$root
 #' W <- chebappxf(f,100,c(-exp(-1),3*exp(3)))
 #' W(10*pi)*exp(W(10*pi))/pi
-#' 
+#' }
 #' @export 
-chebappx <- function(val,intervals=NULL) {
+#' @keywords internal
+chebappx <- function(...) deprecated('chebappx',...)
+chebappx.real <- function(val,intervals=NULL) {
   if(is.null(dim(val))) {
     # allow for one-dimensional
     dim(val) <- length(val)
@@ -207,13 +208,11 @@ chebappx <- function(val,intervals=NULL) {
   if(is.numeric(intervals) && length(intervals) == 2) intervals <- list(intervals)
   cf <- chebcoef(val)
 
-  x <- threads <- NULL; rm(x,threads) # avoid cran check warning 
   if(is.null(intervals)) {
     # it's [-1,1] intervals, so drop transformation
-    fun <- local(vectorfun(.Call(C_evalcheb,cf,x,threads,NULL), K,
-                           args=alist(x=,threads=getOption('chebpol.threads')),
-                           domain=lapply(rep(-1,K),c,1)),
-                 list(cf=cf))
+    fun <- vectorfun(function(x,threads=getOption('chebpol.threads')) .Call(C_evalcheb,cf,x,threads,NULL),
+                     arity=K,
+                     domain=lapply(rep(-1,K),c,1))
     rm(val)
   } else {
     # it's intervals, create mapping into [-1,1]
@@ -223,13 +222,11 @@ chebappx <- function(val,intervals=NULL) {
                length(intervals),' ',length(dim(val)))
     ispan <- sapply(intervals,function(x) 2/diff(x))
     mid <- sapply(intervals,function(x) mean(x))
-    imap <- compiler::cmpfun(function(x) (x-mid)*ispan)
+    imap <- function(x) (x-mid)*ispan
 
-    fun <- local(vectorfun(.Call(C_evalcheb,cf,imap(x), threads, NULL), K,
-                           args=alist(x=,threads=getOption('chebpol.threads')),
-                           domain=intervals),
-                 list(cf=cf,imap=imap))
-                     
+    fun <- vectorfun(function(x,threads=getOption('chebpol.threads')) .Call(C_evalcheb,cf,imap(x), threads, NULL),
+                     arity=K,
+                     domain=intervals)
     rm(val)
   }
   fun
@@ -240,8 +237,11 @@ chebappx <- function(val,intervals=NULL) {
 #' @param dims Integer. The number of Chebyshev points in each dimension.
 #' @param ... Further arguments to \code{fun}.
 #' @export
-chebappxf <- function(fun,dims,intervals=NULL,...) {
-  chebappx(evalongrid(fun,dims,intervals,...),intervals)
+#' @keywords internal
+chebappxf <- function(...) deprecated('chebappxf',...)
+
+chebappxf.real <- function(fun,dims,intervals=NULL,...) {
+  chebappx.real(evalongrid(fun,dims,intervals,...),intervals)
 }
 
 # interpolate on a non-Chebyshev grid. This is useful if you for some reason
@@ -273,7 +273,7 @@ chebappxf <- function(fun,dims,intervals=NULL,...) {
 #' interpolation \code{ch} for \code{val} is created, on the [-1,1] hypercube.
 #' For each dimension a grid-map function \code{gm} is created which maps the
 #' grid-points monotonically into Chebyshev knots. For this, the function
-#' \code{\link{splinefun}} with \code{method='monoH.FC'} is used.  When
+#' \code{\link{splinefun}} with \code{method='hyman'} is used.  When
 #' \code{fun(x)} is called, it translates to \code{ch(gm(x))}.  For uniform
 #' grids, the function \code{\link{ucappx}} will produce a faster interpolation
 #' in that a closed form \code{gm} is used.
@@ -292,7 +292,7 @@ chebappxf <- function(fun,dims,intervals=NULL,...) {
 #' @return A \code{function(x)} defined on the hypercube, approximating the
 #' given function.
 #' @examples
-#' 
+#' \dontrun{
 #' ## evenly spaced grid-points
 #' su <- seq(0,1,length.out=10)
 #' ## irregularly spaced grid-points
@@ -325,15 +325,16 @@ chebappxf <- function(fun,dims,intervals=NULL,...) {
 #'         legend=c('Runge function','chebappxg on uniform grid','Chebyshev'),
 #'         col=c('black','blue','red'), lty=1)
 #' }
-#' 
+#' }
 #' 
 #' @export 
-chebappxg <- function(val,grid=NULL,mapdim=NULL) {
+#' @keywords internal
+chebappxg <- function(...) deprecated('chebappxg',...)
+chebappxg.real <- function(val,grid=NULL,mapdim=NULL) {
   # grid is a list of grid points. val is the values as in expand.grid(grid)
   # if grid is null it is assumed to be a chebyshev grid. The dimensions
   # must be present in val
-  x <- threads <- NULL; rm(x,threads) # avoid cran check warning 
-  if(is.null(grid)) return(chebappx(val))
+  if(is.null(grid)) return(chebappx.real(val))
   if(is.null(dim(val))) dim(val) <- length(val)
   if(!is.list(grid) && length(grid) == length(val)) grid <- list(grid)
   if(prod(sapply(grid,length)) != length(val)) stop('grid size must match data length')
@@ -344,26 +345,27 @@ chebappxg <- function(val,grid=NULL,mapdim=NULL) {
 
 
   intervals <- lapply(grid,range)
-  # create monotone splines with splinefun, method monoH.FC
-  gridmaps <- mapply(splinefun, grid, chebknots(dim(val)), MoreArgs=list(method='monoH.FC'))
+  # create monotone splines with splinefun, method hyman
+  gridmaps <- mapply(stats::splinefun, grid, chebknots(dim(val)), MoreArgs=list(method='hyman'))
 #  gridmaps <- mapply(polyh, chebknots(dim(val)), grid, MoreArgs=list(k=1))
   gridmap <- function(x) {
     if(!is.matrix(x)) return(mapply(function(gm,x) gm(x),gridmaps,x))
     apply(x,2,function(x) mapply(function(gm,x) gm(x),gridmaps,x))
   }
-  ch <- chebappx(val)
-  local(vectorfun(ch(gridmap(x),threads), length(grid), 
-                  args=alist(x=,threads=getOption('chebpol.threads')),
-                  domain=intervals),
-        list(gridmap=gridmap,ch=ch))
+  ch <- chebappx.real(val)
+  vectorfun(function(x,threads=getOption('chebpol.threads')) ch(gridmap(x),threads), 
+            arity=length(grid), 
+            domain=intervals)
 }
 
 #' @rdname chebappxg
 #' @param fun The function to be approximated.
 #' @param mapdim Deprecated.
 #' @export
-chebappxgf <- function(fun, grid, ..., mapdim=NULL) {
+#' @keywords internal
+chebappxgf <- function(...) deprecated('chebappxgf',...)
+chebappxgf.real <- function(fun, grid, ..., mapdim=NULL) {
 
   if(!is.list(grid)) grid <- list(grid)
-  chebappxg(evalongrid(fun, ..., grid=grid),grid,mapdim)
+  chebappxg.real(evalongrid(fun, ..., grid=grid),grid,mapdim)
 }
