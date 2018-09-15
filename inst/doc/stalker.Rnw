@@ -25,27 +25,34 @@
 
 \author{Simen Gaure}
 \address{Ragnar Frisch Centre for Economic Research, Oslo, Norway}
-\date{July 28, 2018}
+\date{September 3, 2018}
 
 \begin{document}
 \setkeys{Gin}{width=0.6\textwidth }
 \begin{abstract}
   The idea behind the stalker spline in package \pkg{chebpol} is
-  outlined.  It is designed as a one-dimensional interpolation to be almost 
-  shape preserving in the sense
-  that it attempts to honour monotonocity properties and local extreme
-  points in the data, though not entirely. There is no fancy theory
-  behind, but it served a purpose for the author, and here it is. The
-  near monotonicity is achieved by somewhat non-traditional means, by
-  sacrificing analyticity, and in a corner case even
+  outlined.  It was originally designed as a one-dimensional interpolation to be
+  almost shape preserving in the sense that it attempts to honour
+  monotonocity properties and local extreme points in the data, though
+  not entirely. There is no fancy theory behind, but it once served a
+  purpose for the author, and here it is. Indeed, it can proabably be
+  phrased in terms of NURBS, wavelets or some such theory, but I am
+  not in need of a certificate of completed apprenticeship
+  (a.k.a.\ ph.d), and am free to phrase it with elementary
+  calculus. In line with the policy of \pkg{chebpol}
+  there are also multidimensional versions.
+  
+  The monotonicity is achieved by somewhat non-traditional
+  means, by sacrificing analyticity, and in a corner case even
   differentiability.  That is, the derivative is not well behaved.
   The name comes from the fact that it follows the data frighteningly
-  close, though it sometimes seems stupid with little foresight. \pkg{chebpol}
-  contains higher dimensional versions too, but they could as well be called \emph{wet paper spline}.  The
-  interpolation isn't a proper spline, since it is not a
-  polynomial. We also obtain a limit in intuitive geometric terms on
-  how large the overshoot can be. The stalker spline can be used when
-  a little more smoothness than multilinear is required.
+  close, though it sometimes seems stupid with little foresight. An
+  alternative name could be \emph{wet paper spline}. The interpolation isn't a
+  proper spline, since it is not a polynomial. We also obtain a limit
+  in intuitive geometric terms on how large the overshoot can be. The
+  stalker spline can be used when more smoothness than multilinear is
+  required, but is not a replacement for more conventional smooth
+  splines like the thin plate spline or Floater-Hormann.
 \end{abstract}
 \maketitle
 \section{Introduction}
@@ -70,32 +77,36 @@ lines(s,ml(s))
 
 There is another way to think about this, we can imagine that at each
 knot \(i\) there lives a function \(f_i(x)\). Whenever we are between
-two knots, the interpolated value is a convex combination of the two
+two knots, the interpolated value is a convex combination (a weighted
+average) of the two
 functions at each side. Say we are in \(x=3.3\). We should have a part
-of \(f_3(3.3)\), and a part of \(f_4(3.3)\), the value should be
+of \(f_3(3.3)\), and a part of \(f_4(3.3)\). Since our point is closest
+to \(3\), we should have more of \(f_3\) than of \(f_4\). We use a linear weight,
+i.e. we have \(4-3.3=0.7\) of \(f_3\), and \(1-(4-3.3)=0.3\) of \(f_4\).
+So the value is
 \(0.7f_3(3.3) + 0.3f_4(3.3)\), or more generally for \(3 \leq x \leq
 4\), \(t f_3(x) + (1-t)f_4(x)\) where \(0 \leq t=4-x \leq 1\).  In the
 multilinear case, all the functions are constant, and equal to the
 value in the point where it lives.
 
-<<out.width='0.5\\linewidth', echo=FALSE>>=
+<<fig.dim=c(5,5), out.width='0.5\\linewidth', echo=FALSE>>=
 plot(pts,val,pch=20,xlab='x',ylab='y')
 for(i in seq_along(pts)) {
-    lines(pts[i]+c(-1,1),c(val[i],val[i]))
+    lines(pts[i]+c(-1,1),c(val[i],val[i]),col=c('blue','green','red')[i%%3+1])
 }
 @ 
 
 When we make a convex combination of two constant values \(v_i\) and
 \(v_{i+1}\), we obtain a straight line: \(t v_i + (1-t) v_{i+1}\).
-This linear interpolation is faithful to the data in the sense that
+This piecewise linear interpolation is faithful to the data in the sense that
 it honours local extrema as well as monotonicity.
 
 In the stalker spline we replace these constant functions with non-constant
 functions. I.e. the function \(f_i(x)\) should not be constant, but pass
-through the 3 knots \(i-1, i\) and \(i+1\). A classical method is to
+through the 3 knots \(i-1, i\) and \(i+1\). An obvious method is to
 let \(f_i\) be the unique quadratic which passes through the three knots. 
 
-<<fig.dim=c(5,5), echo=FALSE>>=
+<<fig.dim=c(5,5), out.width='0.5\\linewidth', echo=FALSE>>=
 plot(pts,val,pch=20,xlab='x',ylab='y',ylim=c(0,1.1))
 for(i in seq_along(pts)[c(-1,-length(pts))]) {
     a <- val[i]
@@ -106,8 +117,10 @@ for(i in seq_along(pts)[c(-1,-length(pts))]) {
 }
 @ 
 
+Whenever we are between two knots, there are two functions living there, one
+on each side.
 The interpolated value between two knots is still a convex combination
-of the two functions living there. The result is that the interpolant between
+of the two functions. The result is that the interpolant between
 any two points is a cubic, with a value between the two functions
 living there.
 
@@ -115,7 +128,7 @@ In the random points
 we have chosen, we have deliberately made the fourth and fifth points
 equal. The 7th and 8th differ by only 0.00001. 
 This accentuates a phenomenon which in some cases can be
-a problem, no polynomial except for the constant
+a problem, no polynomial (actually, no analytic function) except for the constant
 can be constant on an interval. There is ``overshoot'' between knots
 4 and 5. Indeed, many of the functions overshoot, like between 7 
 and 8.
@@ -126,24 +139,58 @@ achieved by ensuring that if the knots \(i-1, i\) and \(i+1\) are
 monotonic (either increasing or decreasing), then the function
 \(f_i(x)\) will also be monotonic.  Other splines, like the Fritsch-Carlson spline in
 \code{splinefun(...,method='monoH.FC')} also does something similar, though with proper
-polynomial spline.
+polynomial splines.
 We achieve this by non-traditionally using a
 fractional degree, i.e. a function of the form \(a + bx + c|x|^r\),
-with \(1\leq r \leq 2\).  Alternatively, we use a hyperbolic function
-\(a+ bx + \frac{d}{1+cx}\).  In this note we call these functions defined by
-three points and a monotonicity constraint, \emph{basis functions}. They
-are not basis functions in the sense used in the spline literature; they are
-not glued together by scalar weights, but by linear functions.
+with \(1\leq r \leq 2\). 
+The idea is that if three monotonic points are such that they can't be
+connected with a quadratic without the quadratic being non-monotonic,
+we modify it by lowering the degree:
+<<echo=FALSE,fig.dim=c(5,5),out.width='0.5\\linewidth'>>=
+vplus <- 2
+vmin <- -0.2
+c <- (vplus+vmin)/2
+b <- (vplus-vmin)/2
+s <- seq(-1,1,len=100)
+r <- abs(b/c)
+plot(s,b*s + c*s^2,typ='l',xlab='x',ylab='y',lwd=2)
+lines(s,b*s + c*abs(s)^r,col='blue',lwd=2)
+points(c(-1,0,1),c(vmin,0,vplus),pch=20)
+abline(h=vmin,lty=2)
+legend('topleft',legend=c(sprintf('%.1fx + %.1fx^2',b,c),sprintf('%.1fx + %.1f|x|^%.1f',b,c,r)),
+       col=c('black','blue'),lty=1)
+@ 
+The blue graph does not look differentiable in 0. It is, but it is not twice differentiable.
+
+We will also consider another parametrized function family of the form
+\begin{equation*}
+a + bx + \frac{d}{1+cx}.
+\end{equation*}
+I.e.\ we replace the fractional degree term with a hyperbola.
+These functions can also be tailored to be monotonic on three points, or with a
+local extreme point in the middle.
+
+In this note we call these functions defined by three points and a
+monotonicity constraint, \emph{basis functions}. They are not basis
+functions in the vector space sense; they are not glued together by
+scalar weights, but by linear or sigmoid functions.  We start out with
+the variable degree stalker in one dimension on a uniform unit grid,
+to get a feel for it without too much notation. Then we take the more
+general case of \(n\) dimensions on non-uniform grids, for both the
+variable degree and hyperbolic case.
 
 \section{The stalker spline}
-To simplify, we consider a basis function \(f(x)\) on the
-interval \([-1,1]\). We have its function values in the three knots
-\(f(-1) = v_-\), \(f(0) = v_0\), and \(f(1) = v_+\). We assume
-
-\begin{equation}
-f(x) = a + bx + c|x|^r.
-\end{equation}
-Inserting our three points, we obtain three equations with three unknowns:
+To simplify, we consider a basis function \(f(x)\) on the interval
+\([-1,1]\). With a uniform grid we can always scale and translate
+\(x\) to have this situation.  We have function values in the
+three knots \(f(-1) = v_-\), \(f(0) = v_0\), and \(f(1) = v_+\). We
+assume,
+\begin{equation*}
+f(x) = a + bx + c|x|^r,
+\end{equation*}
+and must figure out the four parameters \(a,b,c\), and \(r\).
+Inserting our three points, we obtain three equations with three unknowns (the
+\(r\) disappears because we have cleverly chosen our grid points to be \(-1\) and \(1\)):
 \begin{equation}\label{cdef}
 \begin{aligned}
 &a - b + c &= v_-,\\
@@ -161,7 +208,7 @@ c &= \frac12 (v_+ + v_-) - v_0.\\
 \end{aligned}
 \end{equation}
 
-These coefficients will work with any \(r\). Typically we will pick
+These coefficients will work with any \(r\). Typically we would like to pick
 \(r = 2\), but this may destroy monotonicity.
 The three knots are monotonic (either increasing or decreasing)
 whenever \(|c| < |b|\). This can be seen from equation~\eqref{cdef}.
@@ -175,15 +222,18 @@ f'(x) = b + cr|x|^{r-1}\sign(x),
 \end{equation}
 where \(\sign(x)\) is the sign function.  We have a critical point
 \(f'(x) = 0\) for \(|x|^{r-1}\sign(x) = -b/(cr)\). This equation has a
-solution in \(-1 < x < 1\) if \(|b| < r|c|\).  We pick an \(r\) so
+solution in \(-1 < x < 1\) if \(|b| < r|c|\), i.e.\ if the right hand side
+has absolute value less than 1.  We pick an \(r\) so
 that the critical point disappears from the interior.  More
 specifically, if \(r=2\) results in non-monotonicity, i.e.\ if
 \(|b| < 2|c|\), we pick the largest \(r\) which will make \(f(x)\)
 monotonic. That is, \(r = |b/c| < 2\), this will relegate the
-critical point to one of the end points.
+critical point to one of the end points. Since \(|c| < |b|\), we also
+have \(r > 1\).
 
 The same exercise with a non-uniform grid results in a non-linear
-equation in \(r\) which is solved numerically by \pkg{chebpol}.
+equation in \(r\) which is solved numerically by \pkg{chebpol}. We come
+back to this later, when we consider the more general case in higher dimensions.
 
 There are some special cases.  What if \(c=0\)? This
 only happens when the knots are collinear, i.e. on a straight line,
@@ -254,12 +304,8 @@ the non-monotonic curves should have an extreme point in \(x=0\),
 i.e.\ no overshoot, but that is impossible with this function form.
 
 If either \(v_-\) or \(v_+\) grows, \(|b/c|\) converges to 1, so
-we will converge to the non-differentiable case. However, there is a
-problem which becomes pressing when trying to use the stalker spline
-in two or more dimensions.  If, as in figure~\ref{fig:failure}, \(v_-\) moves, the curve for
-\(x < 0\) moves down, but the curve for \(x>0\) moves up or down
-depending on whether the degree changes or not. 
-This behaviour creates problems e.g.\ for surfaces with torsion, as we shall see later.
+we will converge to the non-differentiable case. This dynamic can
+be seen in figure~\ref{fig:failure}.
 
 <<failure,echo=FALSE,fig.dim=c(7,5), fig.align='center', fig.cap='"Basis functions"'>>=
 s <- seq(-1,1,len=100)
@@ -290,27 +336,15 @@ for(i in seq_along(v)) {
 points(rep(-1,length(vseq)),vseq,pch=20)
 @ 
 
-The stalker spline also contains hyperbolic functions of the type
-\(a + bx +\frac{d}{1+cx}\) which are guaranteed to honour both monotonicity
-and local extrema, but like the varying degree stalker it does not generalize well
-to higher dimensions, more or less because ``monotonic'' isn't such a simple concept there. 
-Again we have four parameters and three points. For monotonic
-points we use monotonocity as a fourth constraint, or more precisely we let \(b=0\). 
-For non-monotonic points, we use
-that the middle point should be a local extremum. Thus, the hyperbolic stalker respects
-both monotonicity and local extrema, but still at the cost of non-differentiability
-in the case of completely flat regions. In another special case, it reduces to a parabola.
-The hyperbolic stalker is specified in chebpol as a stalker with zero degree.
-
 \section{Overshoot and blending}
 To sum up, the function passing through \((-1,v_-)\), \((0,v_0)\) and
 \((1,v_+)\) is 
-\begin{equation}
+\begin{equation*}
 f(x) = a + bx + c|x|^r.
-  \end{equation}
+  \end{equation*}
 The coefficients \(a\), \(b\), and \(c\) are as in~\eqref{cvals}. For \(c\neq 0\) the exponent \(r\) is 
 chosen as follows:
-\begin{equation}
+\begin{equation}\label{onedimstalker}
 r = \begin{cases}
  |b/c| &\text{for \(|c| \leq |b| < 2|c|\)},\\
  |c/b| & \text{for \(|b| < |c| < 2|b|\)},\\
@@ -326,7 +360,7 @@ the graph may turn arbitrarily abruptly in the knots.
 We define the overshoot as 0 for monotonic knots, and as \(|v_0 - f(x_0)|\) where
 \(x_0\) is the critical point of the function: \(f'(x_0) = 0\).
 From equation~\eqref{deriv} we have by elementary calculus \(x_0 = -\sign(bc)|b/(rc)|^{1/(r-1)}\).  
-If \(|b| >= 2|c|\) then \(x_0 \notin (-1,1)\), hence the min/max
+If \(|b| \geq r|c|\) then \(x_0 \notin (-1,1)\), hence the min/max
 occurs in an end point, in which case it is not an overshoot.  
 We look at the case \(|b| < r|c|\).
 
@@ -360,58 +394,439 @@ we get \(d_r/(v_- - v_0) =| r^{(1+r)/(1-r)} - r^{2/(1-r)} |/(r-1) \leq e^{-2} \a
 In short, the overshoot is always less than 14\% of the vertical distance from the lowest/highest knot
 to the next lowest/highest knot.
 
-With \(f(0) = 0\), the hyperbolic stalker is 
-\begin{equation}
-f(x) = a + bx -\frac{a}{1+cx}.
-\end{equation}
-When the points are monotonic, i.e. \(\sign(v_-) \neq \sign(v_+)\)
-the coefficients \(a,b\) and \(c\) are computed as
-\begin{equation}
-  \begin{aligned}
-    a &= \frac{2v_-v_+}{v_- + v_+}\\
-    b &= 0\\
-    c &= \frac{v_- + v_+}{v_- - v_+}\\
-  \end{aligned}
-\end{equation}
-For non-monotonic triples, we have
-\begin{equation}
-  \begin{aligned}
-    a &= -2v_-v_+\frac{v_-+v_+}{(v_- - v_+)^2}\\
-    b &= 2\frac{v_-v_+}{v_- - v_+}\\
-    c &= \frac{v_- - v_+}{v_- + v_+}\\
-  \end{aligned}
-\end{equation}
-
-\subsection{Blending and degree}
+\subsection{Blending}
 There is a basis function in every knot, so we glue the functions
-\(f_1\) and \(f_2\) together as a convex combination \(tf_1(x) +
-(1-t)f_2(x-1)\) (\(x-1\) is the normalized coordinate for \(f_2\),
-the basis function in the knot \(x_+\)). We use a linear blender,
-\(t = 1 - x\).  Alternatively we could modify the \(t\) with a sigmoid blender like
+\(f_0\) and \(f_1\) together as a convex combination \(tf_0(x) +
+(1-t)f_1(x)\). We use a linear blender, \(t = 1 - x\) (assuming \(f_0\) lives in 0 and \(f_1\) lives in 1).  
+If we like, we can take a closer look at the actual blended function, i.e.\ 
+\(g(x) = (1-x)f_0(x) + x f_1(x)\). It is possible to write it out by inserting expressions for
+\(f_0(x)\) and \(f_1(x)\) and analyze it closer. We must then remember that
+our exposition above assumes that the \(x\) is shifted so that each function is centred in \(0\).
+For the hyperbolic bases we end up with a rational function with two poles outside \([0,1]\), 
+for the fractional degree stalker we 
+end up with a sum of fractional degree functions.
+
+We can also modify the \(t\) with a sigmoid blender like
 \(t\in [0,1/2] \mapsto \exp(2-1/t)/2\) and \(t\in (1/2,1] \mapsto 1-\exp(2-1/(1-t))/2.\)
 A cubic blender is also available. 
 These can be selected by the argument \code{blend="linear"}, \code{blend="sigmoid"}, or
 \code{blend="cubic"} to the
 stalker interpolant. 
-The three blending functions are shown in figure~\ref{fig:blending}.
+The blending functions are shown in figure~\ref{fig:blending}.
 
 <<blending, fig.dim=c(4,4),fig.cap='Blending functions'>>=
-sigmoid <- function(t) ifelse(t<0.5, 0.5*exp(2-1/t), 1-0.5*exp(2-1/(1-t)))
-cubic <- function(t) -2*t^3 + 3*t^2
 linear <- function(t) t
+cubic <- function(t) -2*t^3 + 3*t^2
+sigmoid <- function(t) ifelse(t<0.5, 0.5*exp(2-1/t), 1-0.5*exp(2-1/(1-t)))
+parodic <- function(t) ifelse(t<0.5, 0.5*exp(4-1/t^2), 1-0.5*exp(4-1/(1-t)^2))
+square <- function(t) ifelse(t<0.5, 0, 1)
 s <- seq(0,1,length=100)
 plot(s,sigmoid(s),typ='l',ylab='y')
 lines(s,linear(s), col='blue')
 lines(s,cubic(s), col='green')
-legend('topleft',legend=c('sigmoid','linear','cubic'),fill=c('black','blue','green'))
+lines(s,parodic(s), col='red')
+lines(s,square(s), col='cyan')
+legend('topleft',legend=c('linear','cubic','sigmoid','parodic','square'),
+       col=c('blue','green','black','red','cyan'),lty=1)
 @ 
 
-The interpolant can be given a \code{"degree"} argument, this
-can be a vector, a fixed degree for each dimension. 
+\section{Multidimensional stalker}
+We consider the stalker in higher dimensions, specifically
+\(\RN^n\).  We have a Cartesian product grid, and in every grid point
+there should live a function. We will try to honor monotonicity and
+extreme points \emph{along the axes}. That is, we do not consider the
+grid to be just any points which happen to lie on a grid, as a radial basis
+function approach would do, but as
+defining for monotonicity and local extreme points. Thus, the resulting
+spline will typically preserve features parallel with the axes. We consider the
+function living in the point \((0,\ldots,0)\).  The grids may be
+different in each dimension, but we call the three grid points along
+dimension \(i\): \(k_i^-\), \(0\), and \(k_i^+\). That is, we have
+\(k_i^- < 0 < k_i^+\). We also transform the function values to be zero based, i.e.
+the value in 0 is 0. The function values (with all
+arguments in other dimensions equal to 0) are \(v_i^-\), \(0\), and
+\(v_i^+\). Thus, the triple is increasing if \(v_i^+ > 0\), it is convex
+if \(v_i^+ k_i^- - v_i^- k_i^+ < 0\).
 
-In more than one dimension, torsion can be a problem for stability. It can create
-striping artefacts. This can be alleviated by having constant degree (different from \code{NA}),
-except possibly for the first dimension. We'll see an example later.
+The function form we choose as a ``basis'' (with \(x=(x_1,x_2,\ldots,x_n)\)) is,
+\begin{equation}\label{funcform}
+f(x) = \sum_{i=1}^n b_i x_i + \sum_{i=1}^n c_i |x_i|^{r_i}
+\end{equation}
+The relation \(f(0) = 0\) is satisfied with this function form.
+For each \(i\) we also have equations for the two other grid points \(k_i^-\) and \(k_i^+\),
+\begin{equation}\label{ptbase}
+  \begin{aligned}
+    v_i^+ &=b_i k_i^+ + c_i|k_i^+|^{r_i},\\
+    v_i^- &=b_i k_i^- + c_i|k_i^-|^{r_i}
+  \end{aligned}
+\end{equation}
+
+These can be solved for \(b_i\) and \(c_i\), with the determinant
+\(D = k_i^+ |k_i^-|^{r_i} - k_i^- |k_i^+|^{r_i}\):
+\begin{equation}\label{pteqs}
+  \begin{aligned}
+    b_i &= \frac{v_i^+ |k_i^-|^{r_i}  - v_i^- |k_i^+|^{r_i}}{D},\\
+    c_i &= \frac{k_i^+ v_i^- - k_i^- v_i^+}{D}\\
+  \end{aligned}
+\end{equation}
+Note that we still have to find \(r_i\) since it occurs in the expressions
+for \(b_i\) and \(c_i\). We will use monotonicity or local extreme points for this
+purpose.
+
+\subsection{Monotonic points}
+If a triple is monotonic we will ensure that our function is monotonic.
+The derivative along dimension \(i\) is \(f_i'(x) = b_i + c_i r_i |x_i|^{r_i-1}\sign{x_i}\).
+We ensure that it is not zero by letting \(1\leq r_i \leq 2\) be the largest number
+which keeps \(f_i'(x_i) \neq 0\) for \(k_i^- < x_i < k_i^+\). To be specific, the equation
+\(f_i'(x_i) = 0\) is 
+\begin{equation}\label{deriv0}
+  |x_i|^{r_i-1} \sign(x_i) = -\frac{b_i}{c_i r_i}.
+\end{equation}
+We first check if \(r_i=2\) avoids a solution.
+In this case, equation~\eqref{deriv0} becomes
+\begin{equation*}
+  x_i = -\frac{b_i}{2c_i}.
+\end{equation*}
+So we avoid a critical point if,
+\begin{equation*}
+  -\frac{b_i}{2c_i} \leq k_i^-\quad\text{or}\quad
+  -\frac{b_i}{2c_i} \geq k_i^+.
+\end{equation*}
+
+If we don't have a critical point, it's fine. If \(r_i=2\) does not work we must lower \(r_i\) so
+much that the critical point is in one of the end points. I.e. we lower \(r_i\) until,
+\begin{equation*}
+ b_i + c_i r_i |k_i^+|^{r_i-1} = 0 \quad\text{or}\quad b_i - c_i r_i |k_i^-|^{r_i-1} = 0.
+\end{equation*}
+
+Using equations~\eqref{pteqs}, we obtain,
+\begin{equation*}
+  \begin{aligned}
+    v_i^+ |k_i^-|^{r_i}  - v_i^- |k_i^+|^{r_i} &= 
+    -(k_i^+ v_i^- - k_i^- v_i^+) r_i |k_i^+|^{r_i-1},\\
+    v_i^+ |k_i^-|^{r_i}  - v_i^- |k_i^+|^{r_i} &= 
+    (k_i^+ v_i^- - k_i^- v_i^+ ) r_i |k_i^-|^{r_i-1}.\\
+  \end{aligned}
+\end{equation*}
+Dividing by \(|k_i^+|^{r_i}\) and \(|k_i^-|^{r_i}\), they become,
+\begin{equation}\label{eqrmono}
+  \begin{aligned}
+    v_i^+ \left|\frac{k_i^-}{k_i^+}\right|^{r_i} - v_i^- &=
+    \left(v_i^+ \frac{k_i^-}{k_i^+} - v_i^-\right) r_i, \\
+    v_i^- \left| \frac{k_i^+}{k_i^-}\right|^{r_i} - v_i^+ &=
+    \left(v_i^- \frac{k_i^+}{k_i^-} - v_i^+ \right) r_i .\\
+  \end{aligned}
+\end{equation}
+This form is faster when solving numerically due to fewer power operators.
+
+
+For a uniform grid, i.e.\ with \(k_i^+ = -k_i^-\), these simplify to
+\begin{equation*}
+\begin{aligned}
+  v_i^+ - v_i^- &= -(v_i^+ + v_i^-)r_i,\\
+  v_i^- - v_i^+  &= -(v_i^+ + v_i^-)r_i.
+\end{aligned}
+\end{equation*}
+We can then choose,
+\begin{equation}\label{unireq}
+  r_i = \left|\frac{v_i^+ - v_i^-}{v_i^+ + v_i^-}\right|.
+\end{equation}
+This is the \(|b/c|\) of equation~\eqref{onedimstalker}.
+
+For a non-uniform grid, we take a closer look.  We have not found a closed form
+solution, but we can at least figure out which of the equations~\eqref{eqrmono} to solve.
+We can either do some algebra, or use our geometric intuition.
+If the triple is increasing and concave, or decreasing and convex,
+we should have the critical point in \(k_i^+\), otherwise in \(k_i^-\). I.e.,
+solve the first equation if either
+\begin{equation*}
+\begin{aligned}
+& v_i^+ > 0 \text{ and } v_i^+ k_i^- - v_i^- k_i^+ > 0, \quad\text{or,}\\
+& v_i^+ < 0 \text{ and } v_i^+ k_i^- - v_i^- k_i^+ < 0,\\
+\end{aligned}
+\end{equation*}
+
+\subsection{Non-monotonic points}
+For non-monotonic triples we have adopted the following strategy. We
+change the sign of \(v_i^-\). This gives us a monotonic triple. We
+find the \(r\) suitable for that, then we use the original \(v_i^-\)
+to compute \(b_i\) and \(c_i\) from equations~\eqref{pteqs}. This is
+the \(|c/b|\) of equation~\eqref{onedimstalker}.
+
+\subsection{Special cases}
+There are some special cases. One could imagine that our determinant \(D\) could vanish, i.e.
+\begin{equation*}
+k_i^+ |k_i^-|^{r_i} = k_i^- |k_i^+|^{r_i},
+\end{equation*}
+but the left side is positive, the right side negative, so this can't happen.
+
+For uniform grids, we can have \(v_i^+ + v_i^- = 0\) in equation~\eqref{unireq}. In
+this case our three points are on a straight line, we can let \(c_i=0\), and then
+\(r_i\) is irrelevant.
+
+Then, it might happen that the equations in~\eqref{eqrmono} do not have a solution.
+This can happen if \(k_i^+ v_i^- = k_i^- v_i^+\), but again this is the linear case,
+we have \(c_i=0\), and \(r_i\) is irrelevant. We can also have either \(v_i^+\) or \(v_i^-\)
+equal to zero, this yields \(r_i=1\).
+
+\section{Multidimensional hyperbolic stalker}
+We have another shape preserving spline which is sligthly easier to
+work with. It's a rational spline. We replace the low degree \(|x|^r\)
+with a hyperbola.  We have the same grid and notation as before.
+
+The function form we choose as a ``basis'' (with \(x=(x_1,x_2,\ldots,x_n)\))
+\begin{equation}\label{funcform}
+f(x) = a + \sum_{i=1}^n b_i x_i + \sum_{i=1}^n \frac{d_i}{1+c_ix_i}
+\end{equation}
+The function value \(f(0) = 0\) gives us an equation
+\begin{equation}\label{zeroval}
+a + \sum_i d_i = 0.
+\end{equation}
+For each \(i\) we also have equations for the two other grid points \(k_i^-\) and \(k_i^+\),
+\begin{equation*}
+  \begin{aligned}
+    v_i^+ &=a + b_i k_i^+ + \frac{d_i}{1+c_i k_i^+} + \sum_{j\neq i}^n d_j,\\
+    v_i^- &=a + b_i k_i^- + \frac{d_i}{1+c_i k_i^-} + \sum_{j\neq i}^n d_j.\\
+  \end{aligned}
+\end{equation*}
+
+We first use equation~\eqref{zeroval} to replace \(a+\sum_{j\neq i}^n d_j\) with \(-d_i\), then
+we multiply each equation with the denominator occuring in them, to obtain:
+\begin{equation}\label{dimequations}
+  \begin{aligned}
+    v_i^++ v_i^+ c_i k_i^+ &= b_i k_i^+ + b_i k_i^+ c_i k_i^+  -c_i k_i^+ d_i,\\
+    v_i^-+ v_i^- c_i k_i^- &= b_i k_i^- + b_i k_i^- c_i k_i^-  -c_i k_i^- d_i.\\
+  \end{aligned}
+\end{equation}
+Again we have two equations in three unknowns \(b_i, c_i, d_i\), and
+the dimensions are independent (i.e. different \(i\)s are independent
+of each other), so the equations can be solved separately for each
+\(i\). That is, we do not have to solve a large simultaneous system of
+non linear equations for all the \(i\)s, only a system of two equations for each \(i\).  
+An intuitive reason why this happens is that we did not include any cross terms of the
+type \(x_i x_j\) in our function form~\eqref{funcform}, nor do we have constraints where
+more than one of the coordinates are non-zero. 
+To find these three parameters from two equations we need an additional equation.
+We use a monotonicity or overshoot constraint.
+
+\subsection{Monotonicity}
+Given the three values \(v_i^-,0\), and \(v_i^+\), they are either monotonic, i.e.\ \(v_i^-\) and \(v_i^+\)
+have opposite signs, 
+or \(0\) is a local extreme point. If they are monotonic we must ensure that our function is monotonic as
+well, i.e. that the derivative along this dimension is different from zero.  We have the
+derivative along dimension \(i\):
+\begin{equation*}
+  f_i'(x) = b_i - \frac{c_i d_i}{(1+c_i x_i)^2}.
+\end{equation*}
+One way to ensure it is nonzero is to choose \(b_i=0\). The only way
+\(f_i'(x)\) can vanish is then if \(c_i d_i=0\), but this would mean that our
+function is constant, this is a special case we handle below.
+So for a monotonic triplet, we set \(b_i = 0\).
+The equations~\eqref{dimequations} then simplify to:
+\begin{equation*}
+  \begin{aligned}
+    v_i^++ v_i^+ c_i k_i^+ &=  -c_i k_i^+ d_i,\\
+    v_i^-+ v_i^- c_i k_i^- &=  -c_i k_i^- d_i.\\
+  \end{aligned}
+\end{equation*}
+These can be solved for \(c_i\) and \(d_i\) to yield,
+\begin{equation}\label{monopars}
+  \begin{aligned}
+    b_i &= 0,\\
+    c_i &= -\frac{k_i^- v_i^+ - k_i^+ v_i^-}{k_i^-  k_i^+ (v_i^+ - v_i^-)},\\
+    d_i &= -\frac{v_i^+ v_i^- (k_i^- - k_i^+)}{k_i^- v_i^+ - k_i^+ v_i^-}.\\
+  \end{aligned}
+\end{equation}
+
+\subsection{Non-monotonicity}
+When the three points are non-monotonic, the middle one is an extreme point, i.e.
+\(f_i'(0) = 0\). This yields the equation,
+\begin{equation*}
+  b_i = c_i d_i.
+\end{equation*}
+Inserting this in equations~\eqref{dimequations} yields,
+\begin{equation*}
+  \begin{aligned}
+    v_i^++ v_i^+ c_i k_i^+ &= c_i d_i k_i^+ + c_i d_i k_i^+ c_i k_i^+  -c_i k_i^+ d_i,\\
+    v_i^-+ v_i^- c_i k_i^- &= c_i d_i k_i^- + c_i d_i k_i^- c_i k_i^-  -c_i k_i^- d_i.\\
+  \end{aligned}
+\end{equation*}
+These immediately simplify to,
+\begin{equation*}
+  \begin{aligned}
+    v_i^++ v_i^+ c_i k_i^+ &= c_i d_i k_i^+ c_i k_i^+,\\
+    v_i^-+ v_i^- c_i k_i^- &= c_i d_i k_i^- c_i k_i^-.\\
+  \end{aligned}
+\end{equation*}
+According to Maple, the solution is,
+\begin{equation}\label{nmonopars}
+  \begin{aligned}
+    b_i &= \frac{v_i^+ v_i^- (k_i^--k_i^+)}{(k_i^-)^2 v_i^+-(k_i^+)^2 v_i^-},\\
+    c_i &= -\frac{(k_i^-)^2 v_i^+-(k_i^+)^2 v_i^-}{k_i^- k_i^+ (k_i^- v_i^+-k_i^+ v_i^-)},\\
+    d_i &= -\frac{(k_i^- v_i^+-k_i^+ v_i^-) k_i^- v_i^+ v_i^- k_i^+ (k_i^--k_i^+)}{((k_i^-)^2 v_i^+-(k_i^+)^2 v_i^-)^2}\\
+  \end{aligned}
+\end{equation}
+So, both for monotonic and non-monotonic triples we can for every \(i\) find the constants
+\(b_i,c_i\) and \(d_i\) from equations~\eqref{monopars} and~\eqref{nmonopars}.
+From equation~\eqref{zeroval} we can then find \(a\),
+and we have all the parameters in the definition of the function \(f\) in equation~\eqref{funcform}.
+
+We can try this out on a simple example, on a grid \((-1,0,1)\) in two dimensions,
+i.e. \(k_i^- = -1\) and \(k_i^+ = 1\).
+We let \(v_1^- = 1/2, v_1^+ = 1, v_2^-=-2, v_2^+ = 1\). I.e. non-monotonic in the
+first dimension, monotonic in the second. We get the parameters:
+\(b_1 = -2, c_1 = -1/3, d_1 = 6, b_2=0, c_2=1/3, d_2=-4, a=-2\). An illustration
+of the function can be found in figure~\ref{fig:2dhyp}.
+
+<<2dhyp,fig.dim=c(4,4),fig.cap='Hyperbolic 2d function',echo=FALSE>>=
+a <- -2
+b.1 <- -2; c.1 <- -1/3; d.1 <- 6
+b.2 <- 0; c.2 <- 1/3; d.2 <- -4
+
+f <- function(x) a + b.1*x[1] + b.2*x[2] + d.1/(1+c.1*x[1]) + d.2/(1+c.2*x[2])
+g <- list(x=seq(-1,1,len=50), y=seq(-1,1,len=50))
+light <- list(specular=0.2,ambient=0.0,diffuse=0.6)
+par(mar=rep(0,4))
+plot3D::persp3D(g$x, g$y, evalongrid(f,grid=g), colvar=NULL, lighting=light,
+        theta=45, ltheta=10, lphi=40, col='green')
+plot3D::points3D(c(0,1,0,-1,0),c(0,0,1,0,-1),c(0,1,1,1/2,-2)+0.05,pch=20,add=TRUE,colvar=NULL)
+@ 
+
+\subsection{Special cases}
+There are some special cases, corresponding to data which can not be fitted with
+the function form in equation~\eqref{funcform}. More specifically, some of the
+denominators in equations~\eqref{monopars} and~\eqref{nmonopars} can vanish. We take the
+monotonic case first. Monotonicity means that \(v_i^-\) and \(v_i^+\) have opposite
+signs, but what if they are equal? The formula for \(c_i\) breaks down.
+But this is trivial, in this case we have a completely flat function with 
+\(v_i^- = v_i^+ = 0\), and \(b_i = d_i = 0\), with \(c_i\) irrelevant.
+
+The other special case in the monotonicity formulae is when \(k_i^- v_i^+ = k_i^+ v_i^-\).
+In this case, the points are on a straight line with derivative \(v_i^+/k_i^+ = v_i^-/k_i^-\), we take
+\(b_i = v_i^+/k_i^+\), \(c_i = d_i = 0\).
+
+Then to the non-monotonic special cases.
+The first case is when the formula for \(c_i\) breaks down, this is linearity and is defined
+as monotonic and handled there.
+The case where \(b_i\) and \(d_i\) are ill-defined is more complicated, it happens
+when \((k_i^-)^2 v_i^+ = (k_i^+)^2 v_i^-\). The three points lie on a parabola with
+its vertex in 0. We are unable to fit our function to these points, instead we
+choose a parabola, i.e. \(\frac{v_i^+}{(k_i^+)^2} x_i^2\). For the purpose of computing
+\(a\) from equation~\eqref{zeroval}, we use \(d_i = 0\).
+
+The last problem could be that the pole \(x^*=-1/c_i\) is in the
+interior, i.e.\ that \(k_i^- < x^* < k_i^+\). This would be
+devastating for an interpolation as we would tend to infinity close to
+this \(x^*\). An algebraic excursion convinces us that this can't
+happen. However, the pole may lie outside the interval, arbitrarily
+close to one of the end points.  It will then be attenuated by our
+blending function. It typically happens when \(v_i^- \approx 0 \neq
+v_i^+\), i.e. a flat area.  When implementing this we must be a little
+bit careful as such a pole easily will create instability when approaching
+an expression of the form \(0\times\infty\). The same goes for the other special cases.
+
+\subsection{Blending}
+Our functions are defined around each grid point in such a way that they
+agree with the given values on a ``cross''. They do not agree in the corners. 
+E.g. for two-dimensional data an \(f\) living in \((0,0)\) agree with the
+given values in \((0,0), (0,1), (1,0), (0,-1)\) and \((-1,0)\), but not in
+\((1,1), (1,-1), (-1,1)\) and \((-1,-1)\). This can be imagined in figure~\ref{fig:2dhyp}.
+There are of course some values in the corners of the green carpet, and they do
+not necessarily agree with the given points which are not drawn. Those points belong
+to neighbouring basis functions.
+
+When interpolating a point, there is a function living in each corner around it,
+but how should they be weighted?
+
+The simplest method is to use the barycentric coordinates of our point, i.e. the
+weight for a corner is the volume of the hypercube opposite the point. Alternatively,
+these weights can be modified by some sigmoid function. An illustration can be found
+in figure~\ref{fig:2dblending}. We have a point in \((0.3,0.4)\), there are functions
+living in each corner, the black dots. The weight for the function in \((1,1)\) is the
+area of the lower blue rectangle \(0.3 \times 0.4 = 0.12\). 
+
+<<2dblending,fig.dim=c(3,3), fig.cap='Blending',echo=FALSE>>=
+#  par(mar=rep(0,4))
+  plot(c(0,1,1,0),c(0,0,1,1),pch=20,xlab='',ylab='')
+  points(0.3,0.4,col='blue')
+  abline(v=0.3,h=0.4,col='blue',lty=2)
+@
+
+
+This will ensure continuity, but it will not ensure differentiability
+even in simple examples, due to the fact that the function living in
+\((1,1)\) has a value in \((0,0)\) which is different from the given
+value in \((0,0)\). Therefore, the hyperbolic stalker is by default
+blended with a cubic in each dimension. I.e.\ the weight above will be
+\(s(0.3) \times s(0.4)\), where \(s\) is the blending function. Note
+that the blending does not introduce non-monotonicity where there is
+none, nor overshoot in the non-monotonic case, but we may still see a
+small amount of such shape disturbance due to the design of the bases.
+We have no absolute guarantee that overshoot will not occur on the
+diagonal of the crosses.  In some cases, additional local
+extrema can also be introduced.
+
+In figure~\ref{fig:meanblend}, we have some random values on a unform
+4x4 grid. For illustration purposes we use a ``mean'' blender , i.e.\ at
+every point we compute the mean of the basis functions living there.
+The resulting interpolant is discontinuous, and we miss the given
+points, it's not actually interpolating. The same thing would happen in
+our first example with the piecewise linear interpolation, we could not
+use a ``mean'' blender there. In order to have reasonably
+smooth transitions we must blend them more properly, when approaching
+a point we must gradually switch to the basis function living
+there. Linear barycentric blending creates a continuous interpolation, but it is
+not differentiable on the grid lines. This can be seen as striped
+artifacts along the grid lines. The cubic blender creates a smooth
+surface. The square blender is included as a way to discern what
+the individual basis functions look like. Halfway between two points,
+the surface jumps to the other basis function.
+
+<<meanblend, fig.cap='2d blending', fig.pos='!ht', fig.dim=c(4,4),out.width='0.4\\linewidth',echo=FALSE,fig.ncol=2,fig.subcap=c('square','mean','linear','cubic')>>=
+set.seed(49)
+NN <- 3
+grid <- list(x=as.numeric(seq(0,NN)),y=as.numeric(seq(0,NN)))
+value <- runif((NN+1)^2)
+ip <- ipol(value,grid=grid, method='hstalker')
+g <- list(x=seq(0,NN,len=50), y=seq(0,NN,len=50))
+light <- list(specular=0.2,ambient=0.0,diffuse=0.6)
+for(bl in c('square','mean','linear','cubic')) {
+  par(mar=rep(0,4))
+  plot3D::persp3D(g$x, g$y, evalongridV(ip,grid=g,blend=bl), colvar=NULL, lighting=light,
+                  theta=45, ltheta=10, lphi=40, col='green',bty='n',axes=FALSE,zlim=range(value))
+  plot3D::points3D(rep(grid$x,NN+1), rep(grid$y,each=NN+1), 
+                   value+0.01,pch=20,add=TRUE,colvar=NULL)
+}
+@ 
+
+In figure~\ref{fig:meanblend} we can imagine that we preserve
+monotonicity and local extrema, but only parallel with the axes. At
+the top of the cubic surface the three visible points are monotonic,
+but the monotonicity is not preserved by the surface. That's because
+those three points do not lie on the same grid line, it's a diagonal
+pattern like a knight on a chess board, points \((2,0)\) and
+\((2,1)\), but \((3,2)\), not \((2,2)\) (with \((0,0)\) to the left).
+\section{Simplex stalker}
+Here is an idea which has not yet been worked out and implemented in
+\pkg{chebpol}. A weakness with the above stalkers is that they only
+preserve features along the axes. The resulting interpolation will
+typically have rectangular features along the grid lines. It might be
+possible to define similar splines on a Delaunay
+triangulation. I.e.\ given some knots (not necessarily organized as a
+Cartesian grid), one can find its Delaunay triangulation.  In a given
+knot \(k\) we consider all pairs of simplices with the knot as a
+vertex. For each such simplex pair \(S_1, S_2\) we consider triplets
+of points \(s_1, k, s_2\) with \(s_1\) a vertex in \(S_1\), and
+\(s_2\) a vertex in \(S_2\). We can then find a basis function on
+these three points in much the same way as we find basis functions
+along the axes in the grid stalker. We need some local coordinates
+which vanish on the other triplets. We can then interpolate a point in
+a simplex by weighing the surrounding basis functions. In this way we
+can consider monotonicity and local extrema in all directions in the
+Delaunay triangulation.  Though, exactly what will be preserved by
+such a concoction escapes my topological intuition. It might be stretching
+the idea too far.
+
 
 \section{Examples}
 In this section we compare the stalker spline to the 
@@ -428,14 +843,15 @@ pts <- pts/max(pts)
 plot(pts,val,pch=20,xlab='x',ylab='y',ylim=c(0,1.1))
 ns <- splinefun(pts,val,method='natural')
 ms <- splinefun(pts,val,method='mono')
-st <- ipol(val,grid=pts,method='stalker',k=NA)
+st <- ipol(val,grid=pts,method='stalker')
+hst <- ipol(val,grid=pts,method='hstalker')
 s <- seq(0,1,len=1000)
 lines(s,ns(s),col='blue')
 lines(s,ms(s),col='green')
-lines(s, st(s), col='magenta')
-lines(s, st(s,degree=0,blend='cub'),col='red')
+lines(s, st(s), col='magenta',lty=2)
+lines(s, hst(s),col='red',lty=2)
 legend('topright',legend=c('stalker','mono','natural','hyperbolic'),
-       fill=c('magenta','green','blue','red'))
+       col=c('magenta','green','blue','red'),lty=c(2,1,1,2))
 @ 
 
 Note that both the stalker and the \code{"monoH.FC"} spline honours the
@@ -457,48 +873,40 @@ val <- sort(val)
 plot(pts,val,pch=20,xlab='x',ylab='y',ylim=c(0,1.1))
 ns <- splinefun(pts,val,method='natural')
 ms <- splinefun(pts,val,method='mono')
-st <- ipol(val,grid=pts, method='stalker', k=NA)
+st <- ipol(val,grid=pts, method='stalker')
+hst <- ipol(val,grid=pts,method='hstalker')
 s <- seq(0,1,len=1000)
 lines(s,ns(s),col='blue')
 lines(s,ms(s),col='green')
-lines(s, st(s), col='magenta')
-lines(s, st(s,deg=0,blend='cub'), col='red')
+lines(s, st(s), col='magenta',lty=2)
+lines(s, hst(s), col='red',lty=2)
 legend('topleft',legend=c('stalker','mono','natural','hyperbolic'),
-       fill=c('magenta','green','blue','red'))
+       col=c('magenta','green','blue','red'),lty=c(2,1,1,2))
 @ 
 
 An interesting case is when the knots are pairwise constant. The stalker spline
-reduces to a linear interpolation. The knots below are not
+reduces to a piecewise linear interpolation. The knots below are not
 exactly pairwise constant, they differ by \(10^{-16}\). This is sufficient
 to make \code{"monoH.FC"} overshoot.
 
 <<fig.dim=c(6,4),echo=FALSE>>=
+set.seed(25)
 val <- rep(runif(N/2),each=2) + c(0,1e-16)
 plot(pts,val,pch=20,xlab='x',ylab='y',ylim=c(0,1.1))
 ns <- splinefun(pts,val,method='natural')
 ms <- splinefun(pts,val,method='mono')
-st <- ipol(val,grid=pts, method='stalker',k=NA)
+st <- ipol(val,grid=pts, method='stalker')
+hst <- ipol(val,grid=pts,method='hstalker')
 s <- seq(0,1,len=1000)
 lines(s,ns(s),col='blue')
 lines(s,ms(s),col='green')
-lines(s, st(s), col='magenta')
-lines(s, st(s,deg=0,blend='cub'), col='red')
+lines(s, st(s), col='magenta',lty=2)
+lines(s, hst(s), col='red',lty=2)
 legend('topleft',legend=c('stalker','mono','natural','hyperbolic'),
-       fill=c('magenta','green','blue','red'))
+       col=c('magenta','green','blue','red'),lty=c(2,1,1,2))
 @ 
 
 \section{Higher dimensions}
-The stalker spline in higher dimension \(N\) is simplistic and problematic.
-It works on a Cartesian grid.
-When evaluating the stalker in an \(x\) between grid points, the stalker is evaluated
-for the \(N-1\) first dimensions on two grid lines on each side of \(x\)
-in dimension \(N\). On these four points in dimension \(N\), two basis functions
-are found, evaluated and blended.  There is no guarantee that doing this
-with the dimensions in another order will yield exactly the same result.
-
-Everything comes at a price, the price for the stalker spline is that it does not
-work very well in higher dimensions. The variable degree causes creasing artefacts.
-
 We take a look at 2d-interpolation, first the Maungawhau volcano with
 exaggerated height in figure~\ref{fig:volcano}. It is quite nice with the stalker interpolation.
 
@@ -507,11 +915,11 @@ data(volcano)
 volc <- volcano[seq(1,nrow(volcano),3),seq(1,ncol(volcano),3)]/10 #low res volcano
 grid <- list(x=as.numeric(seq_len(nrow(volc))), y=as.numeric(seq_len(ncol(volc))))
 ph <- ipol(volc, grid=grid, method='polyharmonic',k=2)
-st <- ipol(volc, grid=grid, method='stalker',k=NA)
+st <- ipol(volc, grid=grid, method='stalker')
 ml <- ipol(volc, grid=grid, method='multilinear')
-g <- list(x=seq(1,nrow(volc), len=71), y=seq(1,ncol(volc),len=71))
+g <- list(x=seq(1,nrow(volc), len=50), y=seq(1,ncol(volc),len=50))
 par(mar=rep(0,4)); col <- 'green'
-light <- list(specular=0.2,ambient=0.0,diffuse=0.6)
+light <- list(specular=0.1,ambient=0.0,diffuse=0.6)
 plot3D::persp3D(grid$x, grid$y, volc, colvar=NULL, lighting=light,
         theta=45, ltheta=0, lphi=40, col=col, axes=FALSE, bty='n',scale=FALSE)
 for(f in list(ml, st, ph)) {
@@ -520,111 +928,57 @@ for(f in list(ml, st, ph)) {
 }
 @ 
 
-Then we interpolate some random points in figure~\ref{fig:random}. Incidentally, there are some
-plane areas, and some torsion. Torsion is a problem for the stalker spline, the degree in one dimension
-goes down to 1, creating striped artefacts in some regions. This is
-alleviated by using a constant degree.  The hyperbolic stalker is remarkably faithful
-to the points, but it also suffers from artefacts in certain areas where it is ill-conditioned.
-There is no advanced
-shading in \code{plot3D::persp3D}, so the \(100\times 100\) resolution
-can be seen if you zoom in.
+Then we interpolate some random points in
+figure~\ref{fig:random}. There is no ``correct'' way to do this, different
+interpolators have different ways to render a surface between the points.
+There is no advanced shading in
+\code{plot3D::persp3D}, so the resolution can be
+seen if you zoom in. Higher resolution would violate space constraints for packages
+on CRAN.
 
-<<random, fig.dim=c(3.5,3.5), fig.pos='!ht', fig.align='center',fig.cap='Random surface',out.width='.4\\linewidth',fig.ncol=2,fig.subcap=c('stalker', 'thin plate spline','hyperbolic stalker','Floater-Hormann')>>=
-set.seed(42); N <- 8
+<<random, fig.dim=c(4,4), fig.pos='!ht', fig.align='center',fig.cap='Random surface',out.width='.5\\linewidth',fig.ncol=2,fig.subcap=c('stalker', 'thin plate spline','hyperbolic stalker','Floater-Hormann')>>=
+set.seed(52); N <- 8
 grid <- list(x=seq(0,1,length=N)+c(0,rnorm(N-2,sd=0.3/N),0), 
              y=seq(0,1,length=N)+c(0,rnorm(N-2,sd=0.3/N),0))
-val <- matrix(runif(N*N,0,0.3),N)
-st <- ipol(val,grid=grid, method='stalker',k=NA)
+val <- matrix(runif(N*N,0,0.4),N)
+st <- ipol(val,grid=grid, method='stalker')
 ph <- ipol(val,grid=grid, method='polyharmonic', k=2)
 fh <- ipol(val,grid=grid, method='fh', k=0)
-sthyp <- function(x) st(x,deg=0,blend='cubic')
-g <- list(x=seq(0,1, len=70), y=seq(0,1,len=70))
-par(mar=rep(0,4))
-for(f in list(st, ph, sthyp, fh)) {
-  plot3D::persp3D(g$x, g$y, evalongridV(f,grid=g), colvar=NULL, lighting=light,
-         theta=60, ltheta=30, lphi=45, col='green', axes=FALSE, bty='n', scale=FALSE,zlim=c(0,1))
+hst <- ipol(val,grid=grid, method='hstalker')
+g <- list(x=seq(0,1, len=50), y=seq(0,1,len=50))
+for(f in list(st, ph, hst, fh)) {
+  par(mar=rep(0,4))
+  plot3D::persp3D(g$x, g$y, evalongridV(f,grid=g), colvar=NULL, lighting=light,phi=60,
+         theta=210, ltheta=225, lphi=45, col='green', axes=FALSE, bty='n', scale=FALSE,zlim=c(0,1))
   pts <- evalongridV(f,grid=grid)+0.00
   plot3D::points3D(rep(grid$x,N),rep(grid$y,each=N),pts,add=TRUE,colvar=NULL,pch=20)
 }
 @ 
 
-The torsion problem can be seen near the right corner.
-We can take a closer look at these portions of the surface in figure~\ref{fig:torsion}.
-The striped artefacts are regions where the degree changes.
-
-<<torsion, fig.dim=c(5,5), out.width='\\linewidth', fig.cap='Torsion problem in the wet paper spline', fig.align='center'>>=
-g <- list(x=seq(grid$x[5],grid$x[8],length=100),y=seq(grid$y[5],grid$y[8],length=100))
-par(mar=rep(1,4))
-plot3D::persp3D(g$x, g$y, evalongridV(st,grid=g), colvar=NULL, lighting=light,
-       theta=120, ltheta=100, lphi=45, col='green', axes=TRUE)
-subgrid <- list(x=grid$x[5:8],y=grid$y[5:8])
-zval <- evalongridV(f,grid=subgrid)+0.005
-plot3D::points3D(rep(subgrid$x,4),rep(subgrid$y,each=4),zval,add=TRUE,colvar=NULL,pch=20)
-@ 
-
-What happens here is the following. The spline along the rightmost border (\(y=1\)) is monotonic.
-The spline next to it has a top, and at some point it crosses the level of the
-rightmost level. As we remember, a spline along the other dimension will then reduce
-its degree all the way down to piecewise linear. It is in this process the lowering of the degree
-on the right side causes reversal of the derivative between the grid points.
-We can see it clearly in figure~\ref{fig:tordet} if we plot the splines for the four \(y\) values, and the black one
-for a spline in between. The grey curve is the one with constant degree 2 in the \(y\) dimension.
-
-<<tordet, fig.cap='Torsion details', fig.align='center'>>=
-x <- seq(grid$x[[5]],grid$x[[8]],len=100)
-pts <- c(grid$y[5:8])
-pt <- mean(grid$y[6:7])
-col <- c('green','magenta','blue','red')
-plot(x,st(rbind(x,pt)),typ='l',ylim=c(0,0.3),ylab='z')
-lines(x,st(rbind(x,pt),deg=c(1.5,2)), col='grey')
-points(grid$x,st(rbind(grid$x,pt)),pch=20)
-for(i in seq_along(pts)) {
-  v <- st(rbind(x,pts[i]))
-  lines(x,v,col=col[i],lty=2)
-  points(grid$x,st(rbind(grid$x,pts[i])),pch=20,col=col[i])
-}
-legend('topright',title='y=',
-    legend=round(c(pts[1:2],pt,pts[3:4]),3),
-    fill=c(col[1:2],'black',col[3:4]))
-@ 
-
-Note that the black curve is always between the blue and the magenta, but erratic
-wherever any of the coloured lines cross.
-
-In figure~\ref{fig:constant} is the same part of the surface with hyperbolic stalker
-in the first dimension, and constant degree 1.5 in the second.
-
-<<constant, fig.dim=c(5,5), out.width='\\linewidth',fig.cap='Constant degree 1.5', fig.align='center'>>=
-par(mar=rep(1,4))
-plot3D::persp3D(g$x, g$y, evalongridV(st,grid=g,degree=c(0,1.5)), colvar=NULL, lighting=light,
-       theta=120, ltheta=100, lphi=45, col='green', axes=TRUE)
-plot3D::points3D(rep(subgrid$x,4),rep(subgrid$y,each=4),zval,add=TRUE,colvar=NULL,pch=20)
-@ 
 
 \section{Summary}
 The stalker spline is created and used with
 <<eval=FALSE>>=
-st <- ipol(val,grid=grid,method='stalker',k=1.5)
-st(x,degree=1.2,blend='linear')
+st <- ipol(val,grid=grid,method='stalker')
+st(x,blend='linear')
 @ 
-where \(k\) is the degree. \code{k} can be a vector, one degree for each
-dimension. It is possible to specify any nonzero degree, though I see no use for
-degrees less than 1 other than for artful displays.
-A degree of zero is treated specially, with hyperbolic functions \(a+bx+\frac{d}{1+cx}\).
-Specifying \code{k=NA} makes the spline adjust the
-degree locally as described above. The hyperbolic and varying degree stalker do not generalize
-very well to two or more dimensions,
-so for multidimenional data varying degree or hyperbolic stalker is strongly discouraged, except
-possibly in the first dimension.
-Evaluation on a non-uniform grid currently involves solving a non-linear equation
-numerically, so this is slower than on a uniform grid.
 
-The spline is created with a default degree, be it \code{NA} or a numeric between 1 and 2.
-It is possible at evaluation time to use a different degree, this incurs a time penalty.
-Ordinarily, basis functions are combined linearly. I.e.\ when we approach a grid point more and
+Alternatively, one may create a hyperbolic stalker as
+<<eval=FALSE>>=
+st <- ipol(val,grid=grid,method='hstalker')
+@ 
+
+Creation of the varying degree stalker on a non-uniform grid currently involves solving a non-linear equation
+for each grid point numerically, so this is slower than on a uniform grid.
+
+Ordinarily, basis functions are combined with a cubic function. I.e.\ when we approach a grid point more and
 more of the basis function living there is weighted in. This can be changed at evaluation
 time, it can be done ``faster'' with
 a sigmoid map, i.e. so that near a grid point, the neighbouring basis functions are not used at all.
-Use \code{blend="sigmoid"} or \code{blend="cubic"} to choose between two such sigmoid maps.
+Use \code{blend="sigmoid"} or \code{blend="cubic"} to choose between two such sigmoid maps, 
+\code{blend="linear"} uses a linear map, but this can create blocking artefacts in higher dimensions.
+It is also possible to specify \code{blend='square'}, this is a discontinuous blender which near
+a knot will use the basis living there without blending with the nearby bases. I see no use
+for this other than educational.
 
 \end{document}

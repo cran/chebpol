@@ -41,15 +41,15 @@ set.seed(46)
 f1 <- function(x) 1.5/log(5+sin(pi/2*(x[1]^2-2*x[2]^2)))
 ch1 <- ipol(f1, dims=c(9,9), method='cheb')
 igrid <- list(x=seq(-1,1,len=9), y=seq(-1,1,len=9))
-st1 <- ipol(f1, grid=igrid, method='stalker')
+st1 <- ipol(f1, grid=igrid, method='hstalker')
 fh1 <- ipol(f1, grid=igrid, method='fh', k=3)
-y <- x <- seq(-1,1,len=200)
+y <- x <- seq(-1,1,len=70)
 testset <- expand.grid(list(x=x,y=y))
 data <- cbind(testset,fun= apply(testset,1,f1), cheb=ch1(t(testset)), 
               stalker=st1(t(testset)), F.H.=fh1(t(testset)))
 
-lattice::levelplot(stalker+F.H.+fun+cheb ~ x+y, data=data, cuts=10,
-          col.regions=grey.colors(11,0.1,0.9), layout=c(2,2), 
+lattice::contourplot(stalker+F.H.+fun+cheb ~ x+y, data=data, cuts=10,
+          labels=FALSE, layout=c(2,2), 
           main='Level plots of function and interpolations')
 
 ## ----poly,echo=FALSE-----------------------------------------------------
@@ -62,8 +62,8 @@ ph2 <- ipol(f2, knots=matrix(runif(4000,-1,1),2), method='polyharmonic', k=3)
 data <- cbind(testset,fun1= apply(testset,1,f1), poly1=ph1(t(testset)), 
               fun2=apply(testset,1,f2), poly2=ph2(t(testset)))
 
-lattice::levelplot(fun2+poly2+fun1+poly1 ~ x+y, data=data, cuts=10,
-          col.regions=grey.colors(11,0.1,0.9), layout=c(2,2), 
+lattice::contourplot(fun2+poly2+fun1+poly1 ~ x+y, data=data, cuts=10,
+          labels=FALSE, layout=c(2,2), 
           main='Level plots of functions and interpolations')
 # compute L2-error (rmse)
 sqrt(cubature::hcubature(function(x) as.matrix((ph2(x)-apply(x,2,f2))^2), rep(-1,2), rep(1,2),
@@ -77,7 +77,7 @@ fh <- ipol(volc, grid=grid, method='fh', k=0)
 knots <- t(expand.grid(grid))
 sl <- ipol(volc, knots=knots, method='simplex')
 ph <- ipol(volc, knots=knots, method='poly')
-g <- list(x=seq(1,nrow(volc), len=100), y=seq(1,ncol(volc),len=100))
+g <- list(x=seq(1,nrow(volc), len=50), y=seq(1,ncol(volc),len=50))
 par(mar=rep(0,4)); col <- 'green'
 light <- list(specular=0.2,ambient=0.0,diffuse=0.6)
 plot3D::persp3D(grid$x, grid$y, volc, colvar=NULL, lighting=light,
@@ -93,8 +93,8 @@ print(m)
 print(ph2(m, threads=3))
 
 ## ----fast----------------------------------------------------------------
-f <- ipol(sin, grid=seq(0,1,length.out=1000), method='multilinear')
+f <- ipol(sin, grid=seq(-pi,pi,length.out=1000), method='hstalker')
 a <- runif(1e6)
 system.time(sin(a))
-system.time(f(a,threads=4))
+system.time(f(a,threads=8))
 

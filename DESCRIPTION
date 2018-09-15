@@ -1,6 +1,6 @@
 Package: chebpol
-Version: 1.7
-Date: 2018-08-23
+Version: 2.0
+Date: 2018-09-15
 Title: Multivariate Interpolation
 Authors@R: person("Simen", "Gaure", email="Simen.Gaure@frisch.uio.no", role=c("aut","cre"),
  comment="Ragnar Frisch Centre for Economic Research")
@@ -24,8 +24,8 @@ BugReports: https://github.com/sgaure/chebpol/issues
 Encoding: UTF-8
 RoxygenNote: 6.1.0
 NeedsCompilation: yes
-Packaged: 2018-08-23 07:51:48 UTC; sgaure
+Packaged: 2018-09-15 05:03:14 UTC; sgaure
 Author: Simen Gaure [aut, cre] (Ragnar Frisch Centre for Economic Research)
 Maintainer: Simen Gaure <Simen.Gaure@frisch.uio.no>
 Repository: CRAN
-Date/Publication: 2018-08-23 08:44:27 UTC
+Date/Publication: 2018-09-15 06:10:03 UTC

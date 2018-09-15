@@ -4,6 +4,7 @@
 #include <fftw3.h>
 #endif
 
+
 static void chebcoef(double *x, int *dims, const int rank, double *F, int dct, int threads) {
   R_xlen_t siz = 1;
   for(int i = 0; i < rank; i++) siz *= dims[i];
@@ -614,7 +615,7 @@ static SEXP R_mlippred(SEXP sgrid, SEXP values) {
 }
 
 static double C_evalmlip(const int rank, double *x, double **grid, int *dims, 
-			 double *values) {
+			 double *values, int blend) {
 
   double weight[rank];
   int valpos = 0;
@@ -642,7 +643,7 @@ static double C_evalmlip(const int rank, double *x, double **grid, int *dims,
   }
 
   // loop over the corners of the box, sum values with weights
-
+  double wsum = 0.0;
   for(int i = 0; i < (1<<rank); i++) {
     // i represents a corner. bit=1 if upper corner, 0 if lower corner.
     // We should find its weight
@@ -652,26 +653,27 @@ static double C_evalmlip(const int rank, double *x, double **grid, int *dims,
     double cw = 1;
     for(int g = 0; g < rank; g++) {
       if( (1<<g) & i) {
-	cw *= weight[g];
+	cw *= blendfun(weight[g],blend);
       } else {
-	cw *= 1-weight[g];
+	cw *= blendfun(1-weight[g],blend);
 	vpos -= stride;
       }
       stride *= dims[g];
     }
+    wsum += cw;
     ipval += cw*values[vpos];
   }
-  return ipval;
+  return ipval/wsum;
 }
 
 /* Then a multilinear approximation */
-static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
+static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads, SEXP Sblend) {
   const int rank = LENGTH(sgrid);
   int gridsize = 1;
   int dims[rank];
   int threads = INTEGER(AS_INTEGER(Rthreads))[0];
   double *grid[rank];
-
+  int blend = 0;
   if(!IS_NUMERIC(values)) error("values must be numeric");
   if(!IS_NUMERIC(x)) error("argument x must be numeric");  
   if(isMatrix(x) ? (nrows(x) != rank) : (LENGTH(x) != rank))
@@ -687,6 +689,7 @@ static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
 
   if(LENGTH(values) != gridsize) error("grid has size %d, you supplied %d values",
 				       gridsize,LENGTH(values));
+  if(!isNull(Sblend)) blend = INTEGER(AS_INTEGER(Sblend))[0];
   const int numvec = isMatrix(x) ? ncols(x) : 1;
   double *xp = REAL(x);
 #ifdef RETMAT
@@ -697,7 +700,7 @@ static SEXP R_evalmlip(SEXP sgrid, SEXP values, SEXP x, SEXP Rthreads) {
   double *out = REAL(resvec);
 #pragma omp parallel for num_threads(threads) schedule(static) if (numvec > 1 && threads > 1)
   for(int i = 0; i < numvec; i++) {
-    out[i] = C_evalmlip(rank,xp+i*rank,grid,dims,REAL(values));
+    out[i] = C_evalmlip(rank,xp+i*rank,grid,dims,REAL(values),blend);
   }
   UNPROTECT(1);
   return resvec;
@@ -732,12 +735,10 @@ static SEXP R_sqdiffs(SEXP x1, SEXP x2, SEXP Sthreads) {
   return res;
 }
 
-static double findsimplex(double *x, double *knots, int *dtri, SEXP adata, int epol,
+//static double findsimplex(double *x, double *knots, int *dtri, SEXP adata, int epol,
+static double findsimplex(double *x, double *knots, int *dtri, double *lumats, int *ipivs, double *bbox, int epol,
 			  double *val, const int dim, const int numsimplex, int nknots) {
 
-  SEXP lumats = VECTOR_ELT(adata,0);
-  SEXP ipivs = VECTOR_ELT(adata,1);
-  double *bbox = REAL(VECTOR_ELT(adata,2));
   double vec[dim+1];
   int N=dim+1, one=1, info;
   for(int simplex = 0; simplex < numsimplex; simplex++) {
@@ -751,8 +752,8 @@ static double findsimplex(double *x, double *knots, int *dtri, SEXP adata, int e
     if(bad) continue;
 
     // bounding box matches. Transform to barycentric coordinates, check that they are positive.
-    double *lumat = REAL(VECTOR_ELT(lumats, simplex));
-    int *ipiv = INTEGER(VECTOR_ELT(ipivs, simplex));
+    double *lumat = lumats + simplex*N*N;
+    int *ipiv = ipivs + simplex*N;
     for(int d = 0; d < dim; d++) vec[d] = x[d];
     vec[dim] = 1.0;
     F77_CALL(dgetrs)("N", &N, &one, lumat, &N, ipiv, vec, &N, &info);
@@ -786,8 +787,8 @@ static double findsimplex(double *x, double *knots, int *dtri, SEXP adata, int e
     }
 
     if(nearest == -1) return NA_REAL;
-    double *lumat = REAL(VECTOR_ELT(lumats, nearest));
-    int *ipiv = INTEGER(VECTOR_ELT(ipivs, nearest));
+    double *lumat = lumats + nearest*N*N;
+    int *ipiv = ipivs + nearest*N;
     const int *tri = dtri + nearest * (dim+1);
     for(int d = 0; d < dim; d++) vec[d] = x[d];
     vec[dim] = 1.0;
@@ -805,6 +806,9 @@ static SEXP R_evalsl(SEXP Sx, SEXP Sknots, SEXP Sdtri, SEXP adata, SEXP Sval,
   // Loop over the triangulation
   int *dtri = INTEGER(Sdtri);
   const int numsimplex = ncols(Sdtri);
+  double *lumats = REAL(VECTOR_ELT(adata,0));
+  int *pivots = INTEGER(VECTOR_ELT(adata,1));
+  double *bboxmat = REAL(VECTOR_ELT(adata,2));
   double *x = REAL(Sx);
   const int dim = nrows(Sknots);
   const int numvec = ncols(Sx);
@@ -816,7 +820,8 @@ static SEXP R_evalsl(SEXP Sx, SEXP Sknots, SEXP Sdtri, SEXP adata, SEXP Sval,
   int epol = LOGICAL(AS_LOGICAL(extrapolate))[0];
 #pragma omp parallel for num_threads(threads) schedule(guided) if(threads > 1 && numvec > 1)
   for(int i = 0; i < numvec; i++) {
-    resvec[i] = findsimplex(x + i*dim, knots, dtri, adata, epol, val, dim, numsimplex, ncols(Sknots));
+    resvec[i] = findsimplex(x + i*dim, knots, dtri, lumats, pivots, bboxmat,
+			    epol, val, dim, numsimplex, ncols(Sknots));
   }
   UNPROTECT(1);
   return ret;
@@ -831,23 +836,19 @@ static SEXP R_analyzesimplex(SEXP Sdtri, SEXP Sknots, SEXP Sthreads) {
   int N = dim+1;
   SEXP retlist = PROTECT(NEW_LIST(3));
   // Allocate everything before parallel for
-  SET_VECTOR_ELT(retlist, 0, NEW_LIST(numsimplex));
-  SET_VECTOR_ELT(retlist, 1, NEW_LIST(numsimplex));
-  SET_VECTOR_ELT(retlist,2,allocMatrix(REALSXP, 2*dim, numsimplex));
-  SEXP lumats = VECTOR_ELT(retlist,0);
-  SEXP pivots = VECTOR_ELT(retlist,1);
+  SET_VECTOR_ELT(retlist, 0, NEW_NUMERIC(numsimplex*N*N));
+  SET_VECTOR_ELT(retlist, 1, NEW_INTEGER(numsimplex*N));
+  SET_VECTOR_ELT(retlist, 2, allocMatrix(REALSXP, 2*dim, numsimplex));
+  double *lumats = REAL(VECTOR_ELT(retlist,0));
+  int *pivots = INTEGER(VECTOR_ELT(retlist,1));
   double *bboxmat = REAL(VECTOR_ELT(retlist,2));
-  for(int i = 0; i < numsimplex; i++) {
-    SET_VECTOR_ELT(lumats,i,allocMatrix(REALSXP,N,N));
-    SET_VECTOR_ELT(pivots,i,NEW_INTEGER(N));
-    for(int j = 0; j <= dim; j++) INTEGER(VECTOR_ELT(pivots,i))[j] = j+1;
-  }
 
 #pragma omp parallel for num_threads(threads) schedule(static) if(threads > 1 && numsimplex > 1)
   for(int simplex = 0; simplex < numsimplex; simplex++) {
     int *tri = dtri + simplex*(dim+1);
-    double *lumat = REAL(VECTOR_ELT(lumats,simplex));
-    int *ipiv = INTEGER(VECTOR_ELT(pivots,simplex));
+    int *ipiv = pivots + simplex*N;
+    for(int j = 0; j < N; j++) ipiv[j] = j+1;
+    double *lumat = lumats + simplex*N*N;
     int info;
     double *m = bboxmat + simplex*2*dim;
     for(int j = 0; j < dim; j++) {m[2*j] = 1e100; m[2*j+1] = -1e100;}
@@ -924,7 +925,7 @@ R_CallMethodDef callMethods[] = {
   {"chebcoef", (DL_FUNC) &R_chebcoef, 3},
   {"FH", (DL_FUNC) &R_FH, 6},
   {"FHweights", (DL_FUNC) &R_fhweights, 3},
-  {"evalmlip", (DL_FUNC) &R_evalmlip, 4},
+  {"evalmlip", (DL_FUNC) &R_evalmlip, 5},
   {"predmlip", (DL_FUNC) &R_mlippred, 2},
   {"evalongrid", (DL_FUNC) &R_evalongrid, 2},
   {"havefftw", (DL_FUNC) &R_havefftw, 0},
@@ -935,6 +936,10 @@ R_CallMethodDef callMethods[] = {
   {"evalpolyh", (DL_FUNC) &R_evalpolyh, 7},
   {"evalsl", (DL_FUNC) &R_evalsl, 8},
   {"evalstalker", (DL_FUNC) &R_evalstalker, 5},
+  {"makehyp", (DL_FUNC) &R_makehyp, 2},
+  {"evalhyp", (DL_FUNC) &R_evalhyp, 4},
+  {"makestalk", (DL_FUNC) &R_makestalk, 2},
+  {"evalstalk", (DL_FUNC) &R_evalstalk, 4},
   {"analyzesimplex", (DL_FUNC) &R_analyzesimplex, 3},
   {"havealglib", (DL_FUNC) &R_havealglib, 0},
   {"havegsl", (DL_FUNC) &havegsl, 0},  

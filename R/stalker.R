@@ -8,7 +8,7 @@ stalkercontext <- function(dmin,dplus,r,grid) {
   })
   list(det=det,pmin=powmin,pplus=powplus)
 }
-stalkerappx <- function(val, grid, r=2, ...) {
+oldstalkerappx <- function(val, grid, r=2, ...) {
   if(!is.list(grid)) grid <- list(grid)
   grid <- lapply(grid,as.numeric)
   if(any(sapply(grid,is.unsorted))) {
@@ -31,7 +31,7 @@ stalkerappx <- function(val, grid, r=2, ...) {
   if(!havegsl() && any(is.na(r) & !uniform)) {
     stop('Non-uniform grid and varying degree needs GSL. Recompile with GSL.')
   }
-  
+
   vectorfun(function(x,threads=getOption('chebpol.threads'),degree=r,
                      blend=c('linear','cubic','sigmoid','parodic','square')) {
     blend <- switch(match.arg(blend),linear=0L,sigmoid=1L,parodic=2L,cubic=3L,square=4L)
@@ -45,6 +45,42 @@ stalkerappx <- function(val, grid, r=2, ...) {
     .Call(C_evalstalker,x,stalker,degree, as.integer(blend), as.integer(threads))
   }, 
   arity=length(grid), 
+  domain=lapply(grid,range))
+}
+
+hstalkerappx <- function(val, grid, ...) {
+  if(!is.list(grid)) grid <- list(grid)
+  grid <- lapply(grid,as.numeric)
+  if(any(sapply(grid,is.unsorted))) {
+    if(!is.function(val)) stop('Grid points must be ordered in increasing order')
+    grid <- lapply(grid,sort)
+  }
+  if(is.function(val)) val <- evalongrid(val,grid=grid,...)
+  stalker <- .Call(C_makehyp,val,grid)
+  vectorfun(function(x,threads=getOption('chebpol.threads'),
+                     blend=c('cubic','linear','sigmoid','parodic','square','mean')) {
+    blend <- switch(match.arg(blend),linear=0L,sigmoid=1L,parodic=2L,cubic=3L,square=4L,mean=5L)
+    .Call(C_evalhyp,x,stalker,as.integer(blend),as.integer(threads))
+  },
+  arity=length(grid),
+  domain=lapply(grid,range))
+}
+
+stalkerappx <- function(val, grid, ...) {
+  if(!is.list(grid)) grid <- list(grid)
+  grid <- lapply(grid,as.numeric)
+  if(any(sapply(grid,is.unsorted))) {
+    if(!is.function(val)) stop('Grid points must be ordered in increasing order')
+    grid <- lapply(grid,sort)
+  }
+  if(is.function(val)) val <- evalongrid(val,grid=grid,...)
+  stalker <- .Call(C_makestalk,val,grid)
+  vectorfun(function(x,threads=getOption('chebpol.threads'),
+                     blend=c('cubic','linear','sigmoid','parodic','square','mean')) {
+    blend <- switch(match.arg(blend),linear=0L,sigmoid=1L,parodic=2L,cubic=3L,square=4L,mean=5L)
+    .Call(C_evalstalk,x,stalker,as.integer(blend),as.integer(threads))
+  },
+  arity=length(grid),
   domain=lapply(grid,range))
 }
 
