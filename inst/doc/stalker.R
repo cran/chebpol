@@ -30,17 +30,24 @@ for(i in seq_along(pts)[c(-1,-length(pts))]) {
 
 ## ----echo=FALSE,fig.dim=c(5,5),out.width='0.5\\linewidth'----------------
 vplus <- 2
-vmin <- -0.2
+vmin <- -0.4
+hb <- 0
+hc <- -(vplus+vmin)/(vplus-vmin)
+hd <- -2*vplus*vmin/(vplus+vmin)
+ha <- -hd
 c <- (vplus+vmin)/2
 b <- (vplus-vmin)/2
 s <- seq(-1,1,len=100)
 r <- abs(b/c)
 plot(s,b*s + c*s^2,typ='l',xlab='x',ylab='y',lwd=2)
 lines(s,b*s + c*abs(s)^r,col='blue',lwd=2)
+lines(s,ha+hd/(1+hc*s),col='green',lwd=2)
 points(c(-1,0,1),c(vmin,0,vplus),pch=20)
 abline(h=vmin,lty=2)
-legend('topleft',legend=c(sprintf('%.1fx + %.1fx^2',b,c),sprintf('%.1fx + %.1f|x|^%.1f',b,c,r)),
-       col=c('black','blue'),lty=1)
+legend('topleft',legend=c(sprintf('%.1fx + %.1fx^2',b,c),
+                          sprintf('%.1fx + %.1f|x|^%.1f',b,c,r),
+                          sprintf('%.1fx + %.1f/(1%-.1fx)',ha,hd,hc)),
+       col=c('black','blue','green'),lty=1,lwd=2)
 
 ## ----basis,echo=FALSE,fig.dim=c(7,5), fig.align='center', fig.cap='"Basis functions"'----
 s <- seq(-1,1,len=100)

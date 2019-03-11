@@ -735,9 +735,8 @@ static SEXP R_sqdiffs(SEXP x1, SEXP x2, SEXP Sthreads) {
   return res;
 }
 
-//static double findsimplex(double *x, double *knots, int *dtri, SEXP adata, int epol,
 static double findsimplex(double *x, double *knots, int *dtri, double *lumats, int *ipivs, double *bbox, int epol,
-			  double *val, const int dim, const int numsimplex, int nknots) {
+			  double *val, const int dim, const int numsimplex, int nknots, int blend) {
 
   double vec[dim+1];
   int N=dim+1, one=1, info;
@@ -763,10 +762,13 @@ static double findsimplex(double *x, double *knots, int *dtri, double *lumats, i
     // We found it
     const int *tri = dtri + simplex * N;
     double sum = 0;
+    double wsum = 0;
     for(int d = 0; d < N; d++) {
-      sum += vec[d]*val[tri[d]-1];
+      const double w = blendfun(vec[d],blend);
+      wsum += w;
+      sum += w*val[tri[d]-1];
     }
-    return sum;
+    return sum/wsum;
   }
   
   if(epol) {
@@ -801,8 +803,7 @@ static double findsimplex(double *x, double *knots, int *dtri, double *lumats, i
 }
 
 static SEXP R_evalsl(SEXP Sx, SEXP Sknots, SEXP Sdtri, SEXP adata, SEXP Sval,
-		     SEXP extrapolate, SEXP Sthreads, SEXP spare) {
-  UNUSED(spare); 
+		     SEXP extrapolate, SEXP Sthreads, SEXP Sblend) {
   // Loop over the triangulation
   int *dtri = INTEGER(Sdtri);
   const int numsimplex = ncols(Sdtri);
@@ -818,10 +819,13 @@ static SEXP R_evalsl(SEXP Sx, SEXP Sknots, SEXP Sdtri, SEXP adata, SEXP Sval,
   SEXP ret = PROTECT(NEW_NUMERIC(ncols(Sx)));
   double *resvec = REAL(ret);
   int epol = LOGICAL(AS_LOGICAL(extrapolate))[0];
+  int blend=0;
+  if(!isNull(Sblend)) blend = INTEGER(AS_INTEGER(Sblend))[0];
+
 #pragma omp parallel for num_threads(threads) schedule(guided) if(threads > 1 && numvec > 1)
   for(int i = 0; i < numvec; i++) {
     resvec[i] = findsimplex(x + i*dim, knots, dtri, lumats, pivots, bboxmat,
-			    epol, val, dim, numsimplex, ncols(Sknots));
+			    epol, val, dim, numsimplex, ncols(Sknots),blend);
   }
   UNPROTECT(1);
   return ret;
@@ -919,6 +923,22 @@ static SEXP R_phifunc(SEXP Sx, SEXP Sk, SEXP Sthreads) {
   if(y != x) UNPROTECT(1);
   return res;
 }
+#ifndef HAVE_ALGLIB
+SEXP R_makerbf(SEXP a, SEXP b, SEXP c, SEXP d) {
+  UNUSED(a); UNUSED(b); UNUSED(c); UNUSED(d);
+  error("ALGLIB not available");
+  return R_NilValue;
+}
+SEXP R_evalrbf(SEXP a, SEXP b, SEXP c) {
+  UNUSED(a); UNUSED(b); UNUSED(c);
+  error("ALGLIB not available");
+  return R_NilValue;
+}
+SEXP R_havealglib() {
+  return ScalarLogical(FALSE);
+}
+
+#endif
 
 R_CallMethodDef callMethods[] = {
   {"evalcheb", (DL_FUNC) &R_evalcheb, 4},
@@ -933,6 +953,7 @@ R_CallMethodDef callMethods[] = {
   {"phifunc", (DL_FUNC) &R_phifunc, 3},
   {"makerbf", (DL_FUNC) &R_makerbf, 4},
   {"evalrbf", (DL_FUNC) &R_evalrbf, 3},
+  {"havealglib", (DL_FUNC) &R_havealglib, 0},
   {"evalpolyh", (DL_FUNC) &R_evalpolyh, 7},
   {"evalsl", (DL_FUNC) &R_evalsl, 8},
   {"evalstalker", (DL_FUNC) &R_evalstalker, 5},
@@ -941,7 +962,6 @@ R_CallMethodDef callMethods[] = {
   {"makestalk", (DL_FUNC) &R_makestalk, 2},
   {"evalstalk", (DL_FUNC) &R_evalstalk, 4},
   {"analyzesimplex", (DL_FUNC) &R_analyzesimplex, 3},
-  {"havealglib", (DL_FUNC) &R_havealglib, 0},
   {"havegsl", (DL_FUNC) &havegsl, 0},  
   {NULL, NULL, 0}
 };

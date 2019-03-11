@@ -1,6 +1,6 @@
 #' Methods for creating multivariate interpolations on hypercubes
 #' 
-#' The package contains methods for creating multivariate
+#' The package contains methods for creating multivariate/multidimensional
 #' interpolations for real-valued functions on hypercubes. The
 #' methods include classical Chebyshev interpolation, multilinear
 #' and Floater-Hormann for arbitrary Cartesian product grids, and simplex linear
@@ -34,6 +34,10 @@
 #' there is the Floater-Hormann interpolation \code{\link{ipol}(...,method='fh')}, and a transformed
 #' Chebyshev variant \code{\link{ipol}(...,method='general')}, as well as a multilinear
 #' \code{\link{ipol}(...,method='multilinear')}. These methods work on uniform grids as well.
+#' There is also a \code{method='stalker'} which is a shape preserving spline, and a variant
+#' \code{method='hstalker'}. Both are described in a vignette. These splines in one dimension
+#' attempts to honour monotonicity and local extrema, in particular the \code{'hstalker'} is
+#' positivity-preserving in the sense that it will preserve maxima and minima.
 #' @section Scattered data:
 #' For scattered data, not necessarily organised as a Cartesian product grid, there is
 #' a simplex linear interpolation available with \code{\link{ipol}(...,method='simplexlinear')},

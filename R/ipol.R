@@ -91,6 +91,7 @@
 #' # make multilinear, Floater-Hormann, Chebyshev and polyharmonic spline.
 #' ml2 <- ipol(f, grid=grid, method='multilin')
 #' fh2 <- ipol(f, grid=grid, method='fh')
+#' hst <- ipol(f, grid=grid, method='hstalker')
 #' ch2 <- ipol(f, dims=c(10,10,10), intervals=list(0:1,0:1,0:1), method='cheb')
 #' knots <- matrix(runif(3*1000),3)
 #' ph2 <- ipol(f, knots=knots, k=2, method='poly')
@@ -100,7 +101,7 @@
 #'   rbase=2, layers=5, lambda=0) 
 #' # make 7 points in R3 to test them on
 #' m <- matrix(runif(3*7),3)
-#' rbind(true=apply(m,2,f), ml=ml2(m), fh=fh2(m), cheb=ch2(m), poly=ph2(m), sl=sl2(m),
+#' rbind(true=apply(m,2,f), ml=ml2(m), fh=fh2(m), cheb=ch2(m), poly=ph2(m), sl=sl2(m),hst=hst(m),
 #' crbf=if(havealglib()) crb(m) else NULL )
 #' 
 #' @export
@@ -134,7 +135,10 @@ ipol <- function(val,dims=NULL,intervals=NULL,grid=NULL,knots=NULL,k=NULL,
              else
                stop('knots must be specified for simplex linear interpolation')
            }
-           return(slappx.real(val,knots,...))
+           blend <- args[['blend']]
+           if(is.null(blend)) return(slappx.real(val,knots,...))
+           newarg <- args[-match(c('blend'),names(args), nomatch=0)]
+           return(blenddef(do.call(slappx.real,c(list(val,knots), newarg)),blend))
          },
          fh={
            if(is.null(grid)) stop('grid must be specified for Floater-Hormann interpolation')
